@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.3
+// @version      9.4
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -82,7 +82,7 @@
     '.sp-ctrl-btn svg { width: 7.5vw !important; height: 7.5vw !important; fill: currentColor !important; }',
     '.sp-ctrl-btn.primary-skip svg { width: 8.8vw !important; height: 8.8vw !important; }',
     '.sp-ctrl-btn.state-active { color: #1db954 !important; }',
-    '.sp-ctrl-btn.state-active::after { content: \'\' !important; position: absolute !important; bottom: 0.6vw !important; width: 1.4vw !important; height: 1.4vw !important; background: #1db954 !important; border-radius: 50% !important; }',
+    '.sp-ctrl-btn.state-active::after { content: "" !important; position: absolute !important; bottom: 0.6vw !important; width: 1.4vw !important; height: 1.4vw !important; background: #1db954 !important; border-radius: 50% !important; }',
     '.sp-mode-badge { position: absolute !important; top: 0.8vw !important; right: 0.6vw !important; background: #1db954 !important; color: #000000 !important; font-size: 2.5vw !important; font-weight: 900 !important; min-width: 3.8vw !important; height: 3.8vw !important; padding: 0 0.4vw !important; border-radius: 50vw !important; display: none !important; align-items: center !important; justify-content: center !important; line-height: 1 !important; }',
     '.sp-ctrl-btn.show-badge .sp-mode-badge { display: flex !important; }',
     '.sp-play-main { background: #ffffff !important; color: #000000 !important; width: 18.5vw !important; height: 18.5vw !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; border: none !important; box-shadow: 0 0.8vh 2.5vh rgba(0,0,0,0.5) !important; cursor: pointer !important; }',
@@ -213,7 +213,8 @@
     if (!url) return '';
     return String(url)
       .split('ab67616d00004851').join('ab67616d0000b273')
-      .split('ab67616d00001e02').join('ab67616d0000b273');
+      .split('ab67616d00001e02').join('ab67616d0000b273')
+      .split('ab67616d000011eb').join('ab67616d0000b273');
   }
 
   // --- 4. TIMELINE SEEKING ENGINE ---
@@ -340,292 +341,27 @@
     }
   }
 
-  // --- 5. LIBRARY, QUEUE & SEARCH SCRAPERS ---
-  function refreshLibraryList() {
-    var container = document.getElementById('sp-library-list');
-    if (!container) return;
-
-    var rows = document.querySelectorAll(
-      'nav[aria-label="Your Library"] [role="listitem"], ' +
-      '#sp-left-sidebar [role="listitem"], ' +
-      '[aria-label="Your Library"] [role="listitem"], ' +
-      '[data-testid="rootlist-item"], ' +
-      '[data-encore-id="listRow"]'
+  // --- 5. NATIVE BUTTON LOCATORS & STATE SYNC ---
+  function getNativeShuffleButton() {
+    return document.querySelector(
+      'button[aria-label*="Shuffle"], button[aria-label*="shuffle"], [data-testid="control-button-shuffle"]'
     );
-
-    var playlistCards = [];
-    var seenTitles = {};
-
-    for (var r = 0; r < rows.length; r++) {
-      var row = rows[r];
-      if (row.querySelector('button[aria-label*="Search"], input')) continue;
-
-      var link = row.querySelector('a[href*="/playlist/"], a[href*="/collection/tracks"], a[href*="/album/"], a[href*="/artist/"], a[href*="/show/"]');
-      var href = link ? (link.getAttribute('href') || '') : '';
-
-      var title = '';
-      var sub = '';
-
-      if (href.indexOf('/collection/tracks') !== -1 || (row.innerText && row.innerText.indexOf('Liked Songs') !== -1)) {
-        title = 'Liked Songs';
-        sub = 'Playlist • Liked Tracks';
-      }
-
-      if (!title && link) {
-        var rawLabel = link.getAttribute('aria-label') || link.getAttribute('title');
-        if (rawLabel) {
-          title = rawLabel.split(',')[0].trim();
-        }
-      }
-
-      if (!title) {
-        var titleNode = row.querySelector(
-          '[data-encore-id="text"][class*="bold"], ' +
-          'p[data-encore-id="text"], ' +
-          'p[dir="auto"], ' +
-          'span[dir="auto"], ' +
-          '[id^="listrow-title-"]'
-        );
-        if (titleNode) {
-          title = titleNode.innerText.trim();
-        }
-      }
-
-      if (!title) {
-        var rawLines = String(row.innerText || '').split(NL);
-        var goodLines = [];
-        for (var l = 0; l < rawLines.length; l++) {
-          var s = rawLines[l].trim();
-          var low = s.toLowerCase();
-          if (s.length > 0 && low !== 'pinned' && low !== 'downloaded' && low !== 'new') {
-            goodLines.push(s);
-          }
-        }
-        if (goodLines.length > 0) {
-          title = goodLines[0];
-          if (goodLines.length > 1) sub = goodLines.slice(1).join(' • ');
-        }
-      }
-
-      if (!sub) {
-        var subNode = row.querySelector(
-          '[data-encore-id="text"]:not([class*="bold"]), ' +
-          '[id^="listrow-subtitle-"], ' +
-          'span[data-encore-id="text"]'
-        );
-        if (subNode && subNode.innerText.trim() !== title) {
-          sub = subNode.innerText.trim();
-        } else {
-          sub = href.indexOf('/album/') !== -1 ? 'Album' : (href.indexOf('/artist/') !== -1 ? 'Artist' : 'Playlist');
-        }
-      }
-
-      if (!title || title.toLowerCase() === 'your library' || title.toLowerCase() === 'playlists') continue;
-      if (seenTitles[title]) continue;
-      seenTitles[title] = true;
-
-      var imgEl = row.querySelector('img');
-      var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
-
-      playlistCards.push({
-        title: title,
-        sub: sub,
-        imgSrc: imgSrc,
-        row: row,
-        link: link
-      });
-    }
-
-    if (!playlistCards.length) {
-      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No playlists detected yet. Tap Reload in a moment.</div>';
-      return;
-    }
-
-    container.innerHTML = '';
-    for (var c = 0; c < playlistCards.length; c++) {
-      (function (data) {
-        var card = document.createElement('div');
-        card.className = 'sp-list-card';
-        card.innerHTML =
-          (data.imgSrc
-            ? '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />'
-            : '<div class="sp-list-img" style="display:flex;align-items:center;justify-content:center;background:#282828;"><svg style="width:6vw;height:6vw;fill:#b3b3b3;" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>') +
-          '<div class="sp-list-info">' +
-          '<span class="sp-list-title">' + data.title + '</span>' +
-          '<span class="sp-list-sub">' + data.sub + '</span>' +
-          '</div>' +
-          '<button class="sp-card-play-btn" title="Play">' +
-          '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
-          '</button>';
-
-        card.addEventListener('click', function (e) {
-          if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
-          var clickTarget = data.link || data.row.querySelector('a, [role="button"]') || data.row;
-          robustClick(clickTarget);
-          setTimeout(function () {
-            switchTab('queue');
-          }, 550);
-        });
-
-        var playBtn = card.querySelector('.sp-card-play-btn');
-        playBtn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          data.row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-          setTimeout(function () {
-            var nativePlay = data.row.querySelector('[data-testid="play-button"], button[aria-label*="Play"]');
-            if (nativePlay) {
-              robustClick(nativePlay);
-            } else {
-              var clickTarget = data.link || data.row.querySelector('a, [role="button"]') || data.row;
-              robustClick(clickTarget);
-              setTimeout(function () {
-                var headerPlay = document.querySelector('[data-testid="action-bar-row"] [data-testid="play-button"]');
-                if (headerPlay) robustClick(headerPlay);
-              }, 600);
-            }
-            switchTab('player');
-          }, 120);
-        });
-
-        container.appendChild(card);
-      })(playlistCards[c]);
-    }
   }
 
-  function extractTrackRowData(row, index) {
-    var titleNode =
-      row.querySelector('[data-testid="internal-track-link"] div') ||
-      row.querySelector('[data-testid="internal-track-link"]') ||
-      row.querySelector('div[dir="auto"]');
-    var title = titleNode ? titleNode.innerText.trim() : 'Track ' + (index + 1);
-
-    var artistNodes = row.querySelectorAll('a[href*="/artist/"]');
-    var artist = '';
-    if (artistNodes.length > 0) {
-      var names = [];
-      for (var i = 0; i < artistNodes.length; i++) {
-        var nm = artistNodes[i].innerText.trim();
-        if (nm) names.push(nm);
-      }
-      artist = names.join(', ');
-    } else {
-      var lines = String(row.innerText || '').split(NL);
-      for (var j = 0; j < lines.length; j++) {
-        var t = lines[j].trim();
-        if (t && t !== title && t !== 'E') {
-          artist = t;
-          break;
-        }
-      }
-      if (!artist) artist = 'Spotify Artist';
-    }
-
-    var imgEl = row.querySelector('img');
-    var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
-
-    return { title: title, artist: artist, imgSrc: imgSrc };
-  }
-
-  function renderTracksIntoContainer(rows, container) {
-    if (!rows || !rows.length) {
-      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No tracks found in current view. Select a playlist in Library first!</div>';
-      return;
-    }
-
-    container.innerHTML = '';
-    for (var i = 0; i < rows.length; i++) {
-      (function (row, idx) {
-        var data = extractTrackRowData(row, idx);
-        var card = document.createElement('div');
-        card.className = 'sp-list-card';
-        card.innerHTML =
-          '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />' +
-          '<div class="sp-list-info">' +
-          '<span class="sp-list-title">' + data.title + '</span>' +
-          '<span class="sp-list-sub">' + data.artist + '</span>' +
-          '</div>';
-
-        card.onclick = function () {
-          row.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-          var playBtn = row.querySelector('[data-testid="play-button"], button[aria-label*="Play"]');
-          if (playBtn) {
-            robustClick(playBtn);
-          } else {
-            row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
-          }
-          switchTab('player');
-        };
-
-        container.appendChild(card);
-      })(rows[i], i);
-    }
-  }
-
-  function refreshQueueList() {
-    var container = document.getElementById('sp-queue-list');
-    if (!container) return;
-
-    var rows = document.querySelectorAll('[data-testid="tracklist-row"]');
-    if (!rows.length) {
-      var qBtn = document.querySelector('[data-testid="control-button-queue"]');
-      if (qBtn) robustClick(qBtn);
-      setTimeout(function () {
-        renderTracksIntoContainer(document.querySelectorAll('[data-testid="tracklist-row"]'), container);
-      }, 450);
-      return;
-    }
-    renderTracksIntoContainer(rows, container);
-  }
-
-  function executeLiveSearch(query) {
-    var resultsContainer = document.getElementById('sp-search-results');
-    if (!query || !String(query).trim()) return;
-
-    resultsContainer.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:4vh;">Searching Spotify...</div>';
-
-    var searchInput = document.querySelector('[data-testid="search-input"], input[placeholder*="What do you want to play"], input[type="search"]');
-    if (searchInput) {
-      var desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-      if (desc && desc.set) {
-        desc.set.call(searchInput, query);
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      setTimeout(function () {
-        renderTracksIntoContainer(document.querySelectorAll('[data-testid="tracklist-row"]'), resultsContainer);
-      }, 900);
-    } else {
-      window.history.pushState({}, '', '/search/' + encodeURIComponent(query) + '/tracks');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-      setTimeout(function () {
-        renderTracksIntoContainer(document.querySelectorAll('[data-testid="tracklist-row"]'), resultsContainer);
-      }, 1200);
-    }
-  }
-
-  function switchTab(tabName) {
-    var panels = document.querySelectorAll('.sp-view-panel');
-    for (var i = 0; i < panels.length; i++) panels[i].classList.remove('active-view');
-    var btns = document.querySelectorAll('.sp-nav-btn');
-    for (var j = 0; j < btns.length; j++) btns[j].classList.remove('active-tab');
-
-    var p = document.getElementById('sp-view-' + tabName);
-    if (p) p.classList.add('active-view');
-    var b = document.getElementById('sp-tab-' + tabName);
-    if (b) b.classList.add('active-tab');
-
-    if (tabName === 'library') refreshLibraryList();
-    if (tabName === 'queue') refreshQueueList();
-  }
-
-  // --- 6. SHUFFLE & LIKE BUTTON HELPERS ---
   function getShuffleState() {
-    var nativeShuf = document.querySelector('[data-testid="control-button-shuffle"]');
+    var nativeShuf = getNativeShuffleButton();
     if (!nativeShuf) return { active: false, smart: false };
 
     var label = String(nativeShuf.getAttribute('aria-label') || '').toLowerCase();
     var checked = String(nativeShuf.getAttribute('aria-checked') || '').toLowerCase();
+    var classes = String(nativeShuf.className || '');
+    var isSubdued = classes.indexOf('text-subdued') !== -1;
 
+    // Spotify Label States:
+    // "Enable Shuffle for..." = Current: OFF
+    // "Enable Smart Shuffle for..." = Current: REGULAR SHUFFLE (active)
+    // "Disable Smart Shuffle for..." = Current: SMART SHUFFLE (active + badge)
+    // "Disable Shuffle for..." = Current: REGULAR SHUFFLE (active)
     if (label.indexOf('enable smart shuffle') !== -1) {
       return { active: true, smart: false };
     }
@@ -641,6 +377,10 @@
 
     if (checked === 'mixed') return { active: true, smart: true };
     if (checked === 'true') return { active: true, smart: false };
+
+    if (!isSubdued && (classes.indexOf('bright-accent') !== -1 || classes.indexOf('is-active') !== -1)) {
+      return { active: true, smart: false };
+    }
     return { active: false, smart: false };
   }
 
@@ -681,6 +421,259 @@
       return true;
     }
     return false;
+  }
+
+  // --- 6. SCRAPERS (PLAYLISTS, QUEUE & SEARCH) ---
+  function refreshLibraryList() {
+    var container = document.getElementById('sp-library-list');
+    if (!container) return;
+
+    // Target Spotify's new Encore listRow layout
+    var rows = document.querySelectorAll(
+      '[data-encore-id="listRow"], div[role="row"] [data-encore-id="listRow"], [data-testid="rootlist-item"]'
+    );
+
+    var playlistCards = [];
+    var seenTitles = {};
+
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      // Skip search inputs or search chips
+      if (row.querySelector('button[aria-label*="Search"], input')) continue;
+
+      var titleEl = row.querySelector('[data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"], [id^="listrow-title-"]');
+      var title = titleEl ? titleEl.innerText.trim() : '';
+
+      var subEl = row.querySelector('[data-encore-id="listRowSubtitle"], [id^="listrow-subtitle-"]');
+      var sub = 'Playlist';
+      if (subEl) {
+        var clone = subEl.cloneNode(true);
+        var pinnedIcons = clone.querySelectorAll('svg, title');
+        for (var p = 0; p < pinnedIcons.length; p++) pinnedIcons[p].remove();
+        sub = clone.innerText.trim() || 'Playlist';
+      }
+
+      if (!title) {
+        var link = row.querySelector('a[href*="/playlist/"], a[href*="/collection/tracks"], a[href*="/album/"]');
+        if (link) title = link.getAttribute('aria-label') || link.innerText.trim();
+      }
+
+      if (!title || seenTitles[title]) continue;
+      seenTitles[title] = true;
+
+      var imgEl = row.querySelector('img[data-testid="entity-image"], img');
+      var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
+
+      var playBtn = row.querySelector('button[data-testid="play-button"], button[aria-label*="Play"]');
+      var openTarget = row.querySelector('.e-10860-legacy-list-row__row-button, [role="button"]') || row;
+
+      playlistCards.push({
+        title: title,
+        sub: sub,
+        imgSrc: imgSrc,
+        playBtn: playBtn,
+        openTarget: openTarget,
+        row: row
+      });
+    }
+
+    if (!playlistCards.length) {
+      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No playlists detected yet. Tap Reload in a moment.</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    for (var c = 0; c < playlistCards.length; c++) {
+      (function (data) {
+        var card = document.createElement('div');
+        card.className = 'sp-list-card';
+        card.innerHTML =
+          (data.imgSrc
+            ? '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />'
+            : '<div class="sp-list-img" style="display:flex;align-items:center;justify-content:center;background:#282828;"><svg style="width:6vw;height:6vw;fill:#b3b3b3;" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>') +
+          '<div class="sp-list-info">' +
+          '<span class="sp-list-title">' + data.title + '</span>' +
+          '<span class="sp-list-sub">' + data.sub + '</span>' +
+          '</div>' +
+          '<button class="sp-card-play-btn" title="Play">' +
+          '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
+          '</button>';
+
+        card.addEventListener('click', function (e) {
+          if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
+          robustClick(data.openTarget);
+          setTimeout(function () {
+            switchTab('queue');
+          }, 550);
+        });
+
+        var btn = card.querySelector('.sp-card-play-btn');
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (data.playBtn) {
+            robustClick(data.playBtn);
+          } else {
+            robustClick(data.openTarget);
+            setTimeout(function () {
+              var mainPlay = document.querySelector('[data-testid="action-bar-row"] [data-testid="play-button"], button[data-testid="play-button"]');
+              if (mainPlay) robustClick(mainPlay);
+            }, 600);
+          }
+          switchTab('player');
+        });
+
+        container.appendChild(card);
+      })(playlistCards[c]);
+    }
+  }
+
+  function extractEncoreTrackRow(row, idx) {
+    var titleEl = row.querySelector('[data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"], [data-testid="internal-track-link"]');
+    var title = titleEl ? titleEl.innerText.trim() : 'Track ' + (idx + 1);
+
+    var artistLinks = row.querySelectorAll('[data-encore-id="listRowSubtitle"] a[href*="/artist/"], a[href*="/artist/"]');
+    var artist = '';
+    if (artistLinks.length > 0) {
+      var arr = [];
+      for (var a = 0; a < artistLinks.length; a++) {
+        var txt = artistLinks[a].innerText.trim();
+        if (txt && arr.indexOf(txt) === -1) arr.push(txt);
+      }
+      artist = arr.join(', ');
+    } else {
+      var subEl = row.querySelector('[data-encore-id="listRowSubtitle"]');
+      if (subEl) {
+        var clone = subEl.cloneNode(true);
+        var badges = clone.querySelectorAll('svg, [title="Explicit"], [aria-label="Explicit"], [title="Music video"]');
+        for (var b = 0; b < badges.length; b++) badges[b].remove();
+        artist = clone.innerText.split('•').pop().trim();
+      }
+      if (!artist) artist = 'Spotify Artist';
+    }
+
+    var imgEl = row.querySelector('img[data-testid="entity-image"], img');
+    var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
+    var playBtn = row.querySelector('button[data-testid="play-button"], button[aria-label*="Play"]');
+    var clickTarget = playBtn || row.querySelector('.e-10860-legacy-list-row__row-button') || row;
+
+    return { title: title, artist: artist, imgSrc: imgSrc, clickTarget: clickTarget, playBtn: playBtn, row: row };
+  }
+
+  function renderTrackRows(rows, container) {
+    if (!rows || !rows.length) {
+      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No tracks found. Open a playlist in Library or tap Queue!</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    for (var i = 0; i < rows.length; i++) {
+      (function (data) {
+        var card = document.createElement('div');
+        card.className = 'sp-list-card';
+        card.innerHTML =
+          (data.imgSrc
+            ? '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />'
+            : '<div class="sp-list-img" style="background:#282828;"></div>') +
+          '<div class="sp-list-info">' +
+          '<span class="sp-list-title">' + data.title + '</span>' +
+          '<span class="sp-list-sub">' + data.artist + '</span>' +
+          '</div>';
+
+        card.onclick = function () {
+          if (data.playBtn) {
+            robustClick(data.playBtn);
+          } else {
+            robustClick(data.clickTarget);
+          }
+          switchTab('player');
+        };
+
+        container.appendChild(card);
+      })(extractEncoreTrackRow(rows[i], i));
+    }
+  }
+
+  function refreshQueueList() {
+    var container = document.getElementById('sp-queue-list');
+    if (!container) return;
+
+    // Look for queue items in treegrid or tracklist-rows
+    var rows = document.querySelectorAll(
+      'ul[role="treegrid"] li[role="row"], ul[aria-label="Next up"] li[role="row"], [data-testid="tracklist-row"]'
+    );
+
+    if (!rows.length) {
+      var qBtn = document.querySelector('[data-testid="control-button-queue"], button[aria-label*="Queue"]');
+      if (qBtn) robustClick(qBtn);
+      setTimeout(function () {
+        var updatedRows = document.querySelectorAll(
+          'ul[role="treegrid"] li[role="row"], ul[aria-label="Next up"] li[role="row"], [data-testid="tracklist-row"]'
+        );
+        renderTrackRows(updatedRows, container);
+      }, 450);
+      return;
+    }
+    renderTrackRows(rows, container);
+  }
+
+  // Set input value cleanly to notify React 18
+  function setNativeInputValue(input, val) {
+    var valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    var prototype = Object.getPrototypeOf(input);
+    var prototypeSetter = Object.getOwnPropertyDescriptor(prototype, 'value') ? Object.getOwnPropertyDescriptor(prototype, 'value').set : null;
+    if (prototypeSetter && valueSetter !== prototypeSetter) {
+      prototypeSetter.call(input, val);
+    } else if (valueSetter) {
+      valueSetter.call(input, val);
+    } else {
+      input.value = val;
+    }
+    if (input._valueTracker) input._valueTracker.setValue('');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function executeLiveSearch(query) {
+    var resultsContainer = document.getElementById('sp-search-results');
+    if (!query || !String(query).trim()) return;
+
+    resultsContainer.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:4vh;">Searching Spotify...</div>';
+
+    var searchInput = document.querySelector('input[data-testid="search-input"], input[data-encore-id="formInput"]');
+    if (!searchInput) {
+      var searchIcon = document.querySelector('button[data-testid="search-icon"], a[href="/search"]');
+      if (searchIcon) robustClick(searchIcon);
+    }
+
+    setTimeout(function () {
+      var input = document.querySelector('input[data-testid="search-input"], input[data-encore-id="formInput"]');
+      if (input) {
+        input.focus();
+        setNativeInputValue(input, query);
+      }
+      setTimeout(function () {
+        // Collect results from the live dropdown list or main search results
+        var resultRows = document.querySelectorAll(
+          '#search-dropdown [data-encore-id="listRow"], ul[data-encore-id="typeList"] [data-encore-id="listRow"], [data-encore-id="listRow"][role="row"], [data-testid="tracklist-row"]'
+        );
+        renderTrackRows(resultRows, resultsContainer);
+      }, 700);
+    }, 200);
+  }
+
+  function switchTab(tabName) {
+    var panels = document.querySelectorAll('.sp-view-panel');
+    for (var i = 0; i < panels.length; i++) panels[i].classList.remove('active-view');
+    var btns = document.querySelectorAll('.sp-nav-btn');
+    for (var j = 0; j < btns.length; j++) btns[j].classList.remove('active-tab');
+
+    var p = document.getElementById('sp-view-' + tabName);
+    if (p) p.classList.add('active-view');
+    var b = document.getElementById('sp-tab-' + tabName);
+    if (b) b.classList.add('active-tab');
+
+    if (tabName === 'library') refreshLibraryList();
+    if (tabName === 'queue') refreshQueueList();
   }
 
   // --- 7. CONTINUOUS SYNC LOOP ---
@@ -899,7 +892,7 @@
             '<svg viewBox="0 0 24 24"><path d="M6 6h3v12H6zm3.5 6l8.5 6V6z"/></svg>' +
           '</button>' +
           '<button id="sp-btn-play" class="sp-play-main" title="Play/Pause">' +
-            '<svg id="sp-play-svg" viewBox="0 0 24 24"><path d="M7.05 3.606l13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606z"></path></svg>' +
+            '<svg id="sp-play-svg" viewBox="0 0 24 24"><path d="M7.05 3.606l13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"></path></svg>' +
           '</button>' +
           '<button id="sp-btn-next" class="sp-ctrl-btn primary-skip" title="Next">' +
             '<svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h3V6h-3z"/></svg>' +
@@ -914,8 +907,8 @@
       '<div id="sp-view-search" class="sp-view-panel">' +
         '<div class="sp-section-header"><span>Search</span></div>' +
         '<div class="sp-search-bar">' +
-          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>' +
-          '<input id="sp-search-input" class="sp-search-input" type="text" placeholder="What do you want to listen to?" />' +
+          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
+          '<input id="sp-search-input" class="sp-search-input" type="text" placeholder="What do you want to play?" />' +
         '</div>' +
         '<div id="sp-search-results" class="sp-item-list"></div>' +
       '</div>' +
@@ -942,7 +935,7 @@
           '<span>Playing</span>' +
         '</button>' +
         '<button id="sp-tab-search" class="sp-nav-btn">' +
-          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>' +
+          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
           '<span>Search</span>' +
         '</button>' +
         '<button id="sp-tab-library" class="sp-nav-btn">' +
@@ -974,9 +967,9 @@
       setTimeout(syncState, 100);
     };
 
-    // Shuffle Click Handler
+    // Shuffle Click Handler using native button
     document.getElementById('sp-btn-shuf').onclick = function () {
-      var nativeShuf = document.querySelector('[data-testid="control-button-shuffle"]');
+      var nativeShuf = getNativeShuffleButton();
       if (nativeShuf) {
         robustClick(nativeShuf);
         setTimeout(syncState, 100);
@@ -1006,7 +999,7 @@
     searchInputEl.addEventListener('input', function (e) {
       clearTimeout(searchTimer);
       var val = e.target.value;
-      searchTimer = setTimeout(function () { executeLiveSearch(val); }, 500);
+      searchTimer = setTimeout(function () { executeLiveSearch(val); }, 450);
     });
     searchInputEl.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
