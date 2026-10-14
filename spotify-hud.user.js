@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      10.0
+// @version      10.2
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -452,49 +452,31 @@
     }
   }
 
-  // --- 6. SAFE ON-DEMAND PANEL OPENERS (NO OVER-EXPANDING) ---
+  // --- 6. ON-DEMAND DIRECT PANEL OPENERS ---
   function ensureLibraryOpen(callback) {
-    // 1. If library playlist rows are ALREADY in the DOM, never click anything!
-    var existingRows = document.querySelectorAll(
-      'div[role="grid"][aria-label="Your Library"] [data-encore-id="listRow"], ' +
-      'nav[aria-label="Your Library"] [data-encore-id="listRow"]'
-    );
-    if (existingRows.length > 0) {
-      callback();
-      return;
-    }
-
-    // 2. Only if 0 rows exist, strictly check for "Open Your Library" (never click "Expand")
     var openLibBtn = document.querySelector('button[aria-label="Open Your Library"]');
     if (openLibBtn) {
       openLibBtn.click();
-      setTimeout(callback, 350);
+      setTimeout(callback, 400);
       return;
     }
     callback();
   }
 
   function ensureQueueOpen(callback) {
-    // 1. If queue rows are ALREADY in the DOM, never click anything!
-    var existingQueueRows = document.querySelectorAll(
-      'ul[aria-label="Next up"] li[role="row"], ' +
-      'ul[role="treegrid"][aria-label*="Next"] li[role="row"]'
-    );
-    if (existingQueueRows.length > 0) {
-      callback();
-      return;
-    }
-
-    // 2. Only if closed, click the queue button
     var qBtn = document.querySelector('button[data-testid="control-button-queue"], button[aria-label="Queue"]');
+    var isClosed = false;
     if (qBtn) {
       var active = qBtn.getAttribute('data-active');
       var pressed = qBtn.getAttribute('aria-pressed');
       if (active === 'false' || pressed === 'false') {
-        qBtn.click();
-        setTimeout(callback, 350);
-        return;
+        isClosed = true;
       }
+    }
+    if (qBtn && isClosed) {
+      qBtn.click();
+      setTimeout(callback, 400);
+      return;
     }
     callback();
   }
@@ -567,13 +549,13 @@
             (data.imgSrc
               ? '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />'
               : '<div class="sp-list-img" style="display:flex;align-items:center;justify-content:center;background:#282828;"><svg style="width:6vw;height:6vw;fill:#b3b3b3;" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>') +
-          '<div class="sp-list-info">' +
-          '<span class="sp-list-title">' + data.title + '</span>' +
-          '<span class="sp-list-sub">' + data.sub + '</span>' +
-          '</div>' +
-          '<button class="sp-card-play-btn" title="Play">' +
-          '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
-          '</button>';
+            '<div class="sp-list-info">' +
+            '<span class="sp-list-title">' + data.title + '</span>' +
+            '<span class="sp-list-sub">' + data.sub + '</span>' +
+            '</div>' +
+            '<button class="sp-card-play-btn" title="Play">' +
+            '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
+            '</button>';
 
           card.addEventListener('click', function (e) {
             if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
@@ -861,7 +843,7 @@
       var isLiked = getLikeState();
       btnLike.classList.toggle('is-liked', isLiked);
       likeSvg.innerHTML = isLiked
-        ? '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>'
+        ? '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35z"/>'
         : '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>';
     }
 
