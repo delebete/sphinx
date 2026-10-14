@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-FastForward & Pure Mobile Shell
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      5.0
 // @match        https://open.spotify.com/*
 // @run-at       document_idle
 // ==/UserScript==
@@ -9,20 +9,27 @@
 (function() {
   'use strict';
 
-  // --- 1. HARD DISABLE BROWSER PINCH / ZOOM ---
-  function enforceViewport() {
+  // --- 1. HARD-ENFORCE DESKTOP MODE & DISABLE ZOOM PINCH ---
+  function lockViewportAndDesktop() {
     let meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
       meta = document.createElement('meta');
       meta.name = 'viewport';
       document.head.appendChild(meta);
     }
+    // Set explicit target density and kill pinch-zoom
     meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+
+    // Set cookie/storage hints Spotify checks for desktop mode
+    try {
+      localStorage.setItem('sp-desktop-mode', 'true');
+      document.cookie = "sp_dc_desk=1; path=/; domain=.spotify.com";
+    } catch(e) {}
   }
-  enforceViewport();
+  lockViewportAndDesktop();
   document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 
-  // --- 2. MASSIVE TOUCH UI STYLES ---
+  // --- 2. COLOSSAL TOUCH UI STYLES ---
   const shellStyles = `
     html, body {
       overflow: hidden !important;
@@ -53,31 +60,32 @@
 
     /* Giant Header */
     .sp-shell-header {
-      padding: 24px 24px 8px 24px !important;
+      padding: 30px 32px 10px 32px !important;
       display: flex !important;
       justify-content: space-between !important;
       align-items: center !important;
       flex-shrink: 0 !important;
     }
     .sp-shell-header h1 {
-      font-size: 38px !important;
+      font-size: 50px !important;
       font-weight: 900 !important;
       margin: 0 !important;
+      letter-spacing: -1.5px !important;
     }
     .sp-pill-ad {
-      font-size: 20px !important;
+      font-size: 26px !important;
       font-weight: 800 !important;
-      padding: 8px 18px !important;
-      border-radius: 20px !important;
+      padding: 12px 26px !important;
+      border-radius: 30px !important;
       background: #e91429 !important;
       color: #fff !important;
       animation: shell-blink 0.8s infinite alternate !important;
     }
     .sp-pill-song {
-      font-size: 20px !important;
+      font-size: 26px !important;
       font-weight: 800 !important;
-      padding: 8px 18px !important;
-      border-radius: 20px !important;
+      padding: 12px 26px !important;
+      border-radius: 30px !important;
       background: #1db954 !important;
       color: #000 !important;
     }
@@ -86,11 +94,11 @@
       to { opacity: 1; }
     }
 
-    /* Scrollable Container with Massive Artwork */
+    /* Body Container */
     .sp-shell-body {
       flex: 1 !important;
       overflow-y: auto !important;
-      padding: 8px 16px 270px 16px !important;
+      padding: 10px 20px 380px 20px !important; /* Space for the bottom panel */
       -webkit-overflow-scrolling: touch !important;
       display: flex !important;
       flex-direction: column !important;
@@ -105,28 +113,28 @@
       box-sizing: border-box !important;
     }
 
-    /* GIGANTIC EDGE-TO-EDGE ARTWORK */
+    /* MASSIVE ALBUM COVER */
     .sp-hero-img {
-      width: 92vw !important;
-      max-width: 500px !important;
+      width: 94vw !important;
+      max-width: 800px !important;
       aspect-ratio: 1 / 1 !important;
-      border-radius: 24px !important;
+      border-radius: 36px !important;
       object-fit: cover !important;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.9) !important;
-      margin-bottom: 24px !important;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.95) !important;
+      margin-bottom: 32px !important;
       background: #181818 !important;
     }
 
     .sp-hero-info {
-      width: 92vw !important;
-      max-width: 500px !important;
+      width: 94vw !important;
+      max-width: 800px !important;
       text-align: left !important;
-      margin-bottom: 12px !important;
+      margin-bottom: 16px !important;
     }
     .sp-hero-title {
-      font-size: 34px !important;
+      font-size: 52px !important;
       font-weight: 900 !important;
-      line-height: 1.2 !important;
+      line-height: 1.15 !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
@@ -134,87 +142,87 @@
       color: #ffffff !important;
     }
     .sp-hero-artist {
-      font-size: 26px !important;
+      font-size: 38px !important;
       font-weight: 600 !important;
       color: #a7a7a7 !important;
-      margin-top: 6px !important;
+      margin-top: 10px !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
       display: block !important;
     }
 
-    /* MASSIVE INTERACTIVE TIMELINE */
+    /* MASSIVE SCRUBBER TIMELINE */
     .sp-scrubber-box {
-      width: 92vw !important;
-      max-width: 500px !important;
-      margin: 16px 0 0 0 !important;
-      padding: 24px 0 !important;
+      width: 94vw !important;
+      max-width: 800px !important;
+      margin: 20px 0 4px 0 !important;
+      padding: 30px 0 !important;
       cursor: pointer !important;
       touch-action: none !important;
     }
     .sp-scrubber-rail {
       width: 100% !important;
-      height: 18px !important;
+      height: 28px !important;
       background: #333333 !important;
-      border-radius: 9px !important;
+      border-radius: 14px !important;
       position: relative !important;
     }
     .sp-scrubber-fill {
       width: 0% !important;
       height: 100% !important;
       background: #1db954 !important;
-      border-radius: 9px !important;
+      border-radius: 14px !important;
       position: relative !important;
     }
     .sp-scrubber-handle {
       position: absolute !important;
-      right: -18px !important;
-      top: -9px !important;
-      width: 36px !important;
-      height: 36px !important;
+      right: -28px !important;
+      top: -14px !important;
+      width: 56px !important;
+      height: 56px !important;
       background: #ffffff !important;
       border-radius: 50% !important;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.8) !important;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.9) !important;
     }
     .sp-time-row {
       display: flex !important;
       justify-content: space-between !important;
-      width: 92vw !important;
-      max-width: 500px !important;
-      margin-top: 2px !important;
-      font-size: 24px !important;
-      font-weight: 700 !important;
+      width: 94vw !important;
+      max-width: 800px !important;
+      margin-top: 6px !important;
+      font-size: 36px !important;
+      font-weight: 800 !important;
       color: #888888 !important;
     }
 
-    /* FIXED BOTTOM SECTION */
+    /* DOCKED BOTTOM CONTROL SECTION */
     .sp-bottom-dock {
       position: absolute !important;
       bottom: 0 !important;
       left: 0 !important;
       right: 0 !important;
-      background: linear-gradient(180deg, rgba(0,0,0,0) 0%, #000000 25%) !important;
+      background: linear-gradient(180deg, rgba(0,0,0,0) 0%, #000000 20%) !important;
       display: flex !important;
       flex-direction: column !important;
-      padding-bottom: env(safe-area-inset-bottom, 16px) !important;
+      padding-bottom: env(safe-area-inset-bottom, 20px) !important;
     }
 
-    /* HUGE CONTROLS ROW */
+    /* COLOSSAL CONTROLS */
     .sp-dock-controls {
       display: flex !important;
       justify-content: space-evenly !important;
       align-items: center !important;
-      padding: 16px 12px 28px 12px !important;
+      padding: 20px 14px 34px 14px !important;
     }
     .sp-dock-controls button {
       background: transparent !important;
       border: none !important;
       color: #b3b3b3 !important;
       cursor: pointer !important;
-      padding: 16px !important;
-      min-width: 76px !important;
-      min-height: 76px !important;
+      padding: 20px !important;
+      min-width: 110px !important;
+      min-height: 110px !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -224,58 +232,58 @@
       -webkit-tap-highlight-color: transparent !important;
     }
     .sp-dock-controls button:active {
-      transform: scale(0.85) !important;
+      transform: scale(0.86) !important;
     }
     .sp-dock-controls button svg {
-      width: 54px !important;
-      height: 54px !important;
+      width: 64px !important;
+      height: 64px !important;
       fill: currentColor !important;
     }
 
-    /* SHUFFLE / REPEAT ACTIVE STYLES (BRIGHT GREEN + GLOW + DOT) */
+    /* ACTIVE GLOWS FOR SHUFFLE / REPEAT */
     .sp-dock-controls button.is-active {
       color: #1db954 !important;
     }
     .sp-dock-controls button.is-active svg {
       fill: #1db954 !important;
-      filter: drop-shadow(0 0 6px rgba(29, 185, 84, 0.8)) !important;
+      filter: drop-shadow(0 0 10px rgba(29, 185, 84, 0.9)) !important;
     }
     .sp-dock-controls button.is-active::after {
       content: '' !important;
       position: absolute !important;
-      bottom: 8px !important;
-      width: 8px !important;
-      height: 8px !important;
+      bottom: 10px !important;
+      width: 12px !important;
+      height: 12px !important;
       background: #1db954 !important;
       border-radius: 50% !important;
     }
 
-    /* MONSTROUS PLAY / PAUSE BUTTON */
+    /* MONUMENTAL PLAY / PAUSE BUTTON (180px) */
     .sp-play-circle {
       background: #1db954 !important;
       color: #000000 !important;
-      width: 120px !important;
-      height: 120px !important;
+      width: 180px !important;
+      height: 180px !important;
       border-radius: 50% !important;
-      box-shadow: 0 8px 30px rgba(29, 185, 84, 0.5) !important;
+      box-shadow: 0 10px 40px rgba(29, 185, 84, 0.6) !important;
     }
     .sp-play-circle:active {
       transform: scale(0.92) !important;
     }
     .sp-play-circle svg {
-      width: 58px !important;
-      height: 58px !important;
+      width: 80px !important;
+      height: 80px !important;
       fill: #000000 !important;
     }
 
-    /* TABS */
+    /* BOTTOM TABS */
     .sp-dock-tabs {
-      height: 80px !important;
+      height: 110px !important;
       background: #000000 !important;
       display: flex !important;
       justify-content: space-around !important;
       align-items: center !important;
-      border-top: 1px solid #1a1a1a !important;
+      border-top: 2px solid #1a1a1a !important;
     }
     .sp-tab {
       display: flex !important;
@@ -285,17 +293,17 @@
       background: none !important;
       border: none !important;
       color: #888888 !important;
-      font-size: 17px !important;
-      font-weight: 700 !important;
-      gap: 6px !important;
+      font-size: 24px !important;
+      font-weight: 800 !important;
+      gap: 8px !important;
       cursor: pointer !important;
       flex: 1 !important;
       height: 100% !important;
       -webkit-tap-highlight-color: transparent !important;
     }
     .sp-tab svg {
-      width: 38px !important;
-      height: 38px !important;
+      width: 48px !important;
+      height: 48px !important;
       fill: currentColor !important;
     }
     .sp-tab.active {
@@ -329,9 +337,7 @@
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  // Seeks by clicking & dragging on Spotify's genuine desktop progressbar element
   function directSpotifySeek(percentage) {
-    // 1. Target Spotify's actual slider rail
     const nativeBar = document.querySelector('[data-testid="playback-progressbar"]');
     if (nativeBar) {
       const rect = nativeBar.getBoundingClientRect();
@@ -347,7 +353,6 @@
       window.dispatchEvent(up);
     }
 
-    // 2. Also sync direct audio tag time
     const media = getMedia();
     if (media && media.duration) {
       try {
@@ -356,7 +361,7 @@
     }
   }
 
-  // --- 4. CONTINUOUS STATE ENGINE ---
+  // --- 4. STATE SYNC (METADATA + 16x SPEED + ACTIVE INDICATORS) ---
   let isDraggingScrubber = false;
 
   function syncState() {
@@ -387,7 +392,6 @@
       badge.className = ad ? 'sp-pill-ad' : 'sp-pill-song';
     }
 
-    // Song metadata
     if (navigator.mediaSession?.metadata) {
       const meta = navigator.mediaSession.metadata;
       if (title) title.innerText = meta.title || 'Playing';
@@ -397,34 +401,30 @@
       }
     }
 
-    // Play/Pause icon
     if (playSvg) {
       if (media.paused) {
-        playSvg.innerHTML = '<polygon points="10 8 30 20 10 32 10 8"></polygon>';
+        playSvg.innerHTML = '<polygon points="14 10 42 26 14 42 14 10"></polygon>';
       } else {
-        playSvg.innerHTML = '<rect x="9" y="8" width="7" height="24"></rect><rect x="23" y="8" width="7" height="24"></rect>';
+        playSvg.innerHTML = '<rect x="12" y="10" width="10" height="32"></rect><rect x="30" y="10" width="10" height="32"></rect>';
       }
     }
 
-    // --- ACCURATE SHUFFLE & REPEAT DETECTION ---
+    // Toggle active state classes on Shuffle & Repeat
     const nativeShuf = document.querySelector('[data-testid="control-button-shuffle"]');
     if (nativeShuf && btnShuf) {
-      const isAriaTrue = nativeShuf.getAttribute('aria-checked') === 'true';
-      const hasActiveLabel = (nativeShuf.getAttribute('aria-label') || '').toLowerCase().includes('disable');
-      const hasSpotGreen = getComputedStyle(nativeShuf).color.includes('29, 185, 84') || nativeShuf.classList.contains('active');
-      btnShuf.classList.toggle('is-active', isAriaTrue || hasActiveLabel || hasSpotGreen);
+      const isAria = nativeShuf.getAttribute('aria-checked') === 'true';
+      const isClass = nativeShuf.classList.contains('active') || getComputedStyle(nativeShuf).color.includes('29, 185, 84');
+      btnShuf.classList.toggle('is-active', isAria || isClass);
     }
 
     const nativeRep = document.querySelector('[data-testid="control-button-repeat"]');
     if (nativeRep && btnRep) {
       const repVal = nativeRep.getAttribute('aria-checked');
       const isRepAria = repVal === 'true' || repVal === 'mixed';
-      const hasRepLabel = (nativeRep.getAttribute('aria-label') || '').toLowerCase().includes('disable') || (nativeRep.getAttribute('aria-label') || '').toLowerCase().includes('repeat one');
-      const hasRepGreen = getComputedStyle(nativeRep).color.includes('29, 185, 84');
-      btnRep.classList.toggle('is-active', isRepAria || hasRepLabel || hasRepGreen);
+      const isRepClass = getComputedStyle(nativeRep).color.includes('29, 185, 84');
+      btnRep.classList.toggle('is-active', isRepAria || isRepClass);
     }
 
-    // Timeline updates
     if (!isDraggingScrubber && media.duration) {
       const pct = (media.currentTime / media.duration) * 100;
       if (progress) progress.style.width = `${pct}%`;
@@ -435,17 +435,15 @@
 
   setInterval(syncState, 150);
 
-  // --- 5. DISPATCH ACTIONS TO SPOTIFY'S DESKTOP BAR ---
   function clickDesktop(testId) {
     const el = document.querySelector(`[data-testid="${testId}"]`);
     if (el) {
       el.click();
-      // Immediately run sync so UI updates with zero lag
       setTimeout(syncState, 40);
     }
   }
 
-  // --- 6. MOUNT FULLSCREEN SHELL ---
+  // --- 5. MOUNT OVERLAY SHELL ---
   function mountShell() {
     if (document.getElementById('sp-mobile-shell')) return;
 
@@ -462,13 +460,12 @@
 
       <div class="sp-shell-body">
         <div class="sp-hero-card">
-          <img id="sp-shell-art" class="sp-hero-img" src="" alt="Album Artwork" />
+          <img id="sp-shell-art" class="sp-hero-img" src="" alt="Album Art" />
           <div class="sp-hero-info">
             <span id="sp-shell-title" class="sp-hero-title">Connecting...</span>
             <span id="sp-shell-artist" class="sp-hero-artist">Spotify</span>
           </div>
 
-          <!-- MASSIVE SCRUBBER -->
           <div class="sp-scrubber-box" id="sp-scrub-box">
             <div class="sp-scrubber-rail" id="sp-rail">
               <div class="sp-scrubber-fill" id="sp-shell-fill">
@@ -489,13 +486,13 @@
             <svg viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
           </button>
           <button id="sp-btn-prev" title="Previous">
-            <svg viewBox="0 0 24 24"><path d="M6 6h3v12H6zm4 6l10 7.5V4.5z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M6 6h3.5v12H6zm4 6l10 7.5V4.5z"/></svg>
           </button>
           <button id="sp-btn-play" class="sp-play-circle" title="Play/Pause">
-            <svg id="sp-shell-playsvg" viewBox="0 0 40 40"><polygon points="10 8 30 20 10 32 10 8"></polygon></svg>
+            <svg id="sp-shell-playsvg" viewBox="0 0 52 52"><polygon points="14 10 42 26 14 42 14 10"></polygon></svg>
           </button>
           <button id="sp-btn-next" title="Next">
-            <svg viewBox="0 0 24 24"><path d="M4 19.5l10-7.5-10-7.5v15zM15 6h3v12h-3z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M4 19.5l10-7.5-10-7.5v15zM14.5 6h3.5v12h-3.5z"/></svg>
           </button>
           <button id="sp-btn-rep" title="Repeat">
             <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
@@ -521,14 +518,14 @@
 
     root.appendChild(shell);
 
-    // Event attachments
+    // Event hooks
     document.getElementById('sp-btn-play')?.addEventListener('click', () => clickDesktop('control-button-playpause'));
     document.getElementById('sp-btn-next')?.addEventListener('click', () => clickDesktop('control-button-skip-forward'));
     document.getElementById('sp-btn-prev')?.addEventListener('click', () => clickDesktop('control-button-skip-back'));
     document.getElementById('sp-btn-shuf')?.addEventListener('click', () => clickDesktop('control-button-shuffle'));
     document.getElementById('sp-btn-rep')?.addEventListener('click', () => clickDesktop('control-button-repeat'));
 
-    // --- RELIABLE DRAG & TOUCH TIMELINE SCRUBBING ---
+    // Giant Scrubber Touch Handlers
     const scrubBox = document.getElementById('sp-scrub-box');
     const rail = document.getElementById('sp-rail');
     const fill = document.getElementById('sp-shell-fill');
