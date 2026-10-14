@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.6
+// @version      9.7
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -382,7 +382,6 @@
     return { active: false, smart: false };
   }
 
-  // Scoped strictly to player bar to avoid matching sidebar or playlist buttons
   function getNativeLikeButton() {
     var bar = document.querySelector('footer, [data-testid="now-playing-bar"]');
     if (bar) {
@@ -413,9 +412,6 @@
     var label = String(btn.getAttribute('aria-label') || '').toLowerCase();
     var classes = String(btn.className || '');
 
-    // Spotify's Encore Pattern:
-    // Liked: aria-label="Add to playlist" (aria-checked="true", bright-accent class)
-    // Not Liked: aria-label="Add to Liked Songs" (aria-checked="false", text-subdued)
     if (checked === 'true' || label === 'add to playlist' || label.indexOf('remove') !== -1 || classes.indexOf('bright-accent') !== -1) {
       return true;
     }
@@ -431,12 +427,10 @@
 
     var currentlyLiked = getLikeState();
     if (!currentlyLiked) {
-      // 1-click add to Liked Songs
       robustClick(nativeLike);
       setTimeout(syncState, 150);
       setTimeout(syncState, 450);
     } else {
-      // Unlike opens playlist selection dialog; automatically uncheck Liked Songs and close
       robustClick(nativeLike);
 
       var checkTimer = setInterval(function () {
@@ -458,7 +452,30 @@
     }
   }
 
-  // --- 6. SCRAPERS (PLAYLISTS, TRACKS, QUEUE & SEARCH) ---
+  // --- 6. BACKGROUND DAEMON: KEEP QUEUE & LIBRARY MOUNTED ---
+  function ensureBackgroundPanels() {
+    // Silently open Queue drawer if closed
+    var qBtn = document.querySelector('button[data-testid="control-button-queue"], button[aria-label*="Queue"]');
+    if (qBtn) {
+      var isQueueOpen = qBtn.getAttribute('aria-checked') === 'true' ||
+                        qBtn.getAttribute('aria-expanded') === 'true' ||
+                        document.querySelector('[aria-label="Next up"]') !== null;
+      if (!isQueueOpen) {
+        robustClick(qBtn);
+      }
+    }
+
+    // Silently expand Your Library if collapsed
+    var expandLibBtn = document.querySelector('button[aria-label*="Expand Your Library"]');
+    if (expandLibBtn) {
+      robustClick(expandLibBtn);
+    }
+  }
+
+  // Periodically ensure desktop background panels remain mounted
+  setInterval(ensureBackgroundPanels, 2500);
+
+  // --- 7. SCRAPERS (PLAYLISTS, TRACKS, QUEUE & SEARCH) ---
   function refreshLibraryList() {
     var container = document.getElementById('sp-library-list');
     if (!container) return;
@@ -533,7 +550,6 @@
           '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
           '</button>';
 
-        // Tapping opens the playlist and directs to Tracks tab
         card.addEventListener('click', function (e) {
           if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
           robustClick(data.openTarget);
@@ -563,7 +579,6 @@
   }
 
   function extractTrackData(row, idx) {
-    // Check main playlist track row format
     var titleEl = row.querySelector('[data-testid="internal-track-link"] div, [data-testid="internal-track-link"], [data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"]');
     var title = titleEl ? titleEl.innerText.trim() : 'Track ' + (idx + 1);
 
@@ -640,21 +655,19 @@
     renderRowsToContainer(rows, container, 'No tracks open. Select a playlist in Library to view tracks here!');
   }
 
-  // --- SEPARATE TAB 2: QUEUE (The Next Up list) ---
+  // --- SEPARATE TAB 2: QUEUE (Strictly Next Up List) ---
   function refreshQueueList() {
     var container = document.getElementById('sp-queue-list');
     if (!container) return;
 
-    var queueList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"]');
+    ensureBackgroundPanels();
+
+    var queueList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
     var rows = queueList ? queueList.querySelectorAll('li[role="row"]') : [];
 
     if (!rows.length) {
-      // Auto-mount native queue drawer in background
-      var qBtn = document.querySelector('[data-testid="control-button-queue"], button[aria-label*="Queue"]');
-      if (qBtn) robustClick(qBtn);
-
       setTimeout(function () {
-        var updatedList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"]');
+        var updatedList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
         var updatedRows = updatedList ? updatedList.querySelectorAll('li[role="row"]') : [];
         renderRowsToContainer(updatedRows, container, 'Queue is empty or loading. Tap Reload!');
       }, 500);
@@ -723,7 +736,7 @@
     if (tabName === 'queue') refreshQueueList();
   }
 
-  // --- 7. CONTINUOUS SYNC LOOP ---
+  // --- 8. CONTINUOUS SYNC LOOP ---
   function syncState() {
     var isSong = isRealSongPlaying();
     var targetRate = isSong ? 1.0 : 16.0;
@@ -825,7 +838,7 @@
       btnRep.classList.toggle('show-badge', isRepeatOne);
     }
 
-    // Like Sync (Directly targeting Encore player bar state)
+    // Like Sync
     var btnLike = document.getElementById('sp-btn-like');
     var likeSvg = document.getElementById('sp-like-svg');
     if (btnLike && likeSvg) {
@@ -896,7 +909,7 @@
 
   setInterval(syncState, 150);
 
-  // --- 8. MOUNT APPLICATION UI ---
+  // --- 9. MOUNT APPLICATION UI ---
   function mountShell() {
     if (document.getElementById('sp-mobile-shell')) return;
     var root = document.body || document.documentElement;
@@ -1056,7 +1069,6 @@
       }
     };
 
-    // Like Click Handler (Auto-unliking and clean toggling)
     document.getElementById('sp-btn-like').onclick = handleLikeButtonClick;
 
     document.getElementById('sp-tab-player').onclick = function () { switchTab('player'); };
@@ -1125,6 +1137,9 @@
         isUserScrubbing = false;
       }, 300);
     });
+
+    // Ensure desktop panels are mounted in background on initial boot
+    setTimeout(ensureBackgroundPanels, 1000);
   }
 
   var initInterval = setInterval(function () {
