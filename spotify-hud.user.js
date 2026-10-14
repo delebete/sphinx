@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-FastForward & Pure Mobile Shell
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      4.0
 // @match        https://open.spotify.com/*
 // @run-at       document_idle
 // ==/UserScript==
@@ -9,8 +9,8 @@
 (function() {
   'use strict';
 
-  // --- 1. PREVENT ACCIDENTAL PINCH / DOUBLE-TAP ZOOMING ---
-  function enforceMobileViewport() {
+  // --- 1. HARD DISABLE BROWSER PINCH / ZOOM ---
+  function enforceViewport() {
     let meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
       meta = document.createElement('meta');
@@ -19,10 +19,10 @@
     }
     meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
   }
-  enforceMobileViewport();
+  enforceViewport();
   document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 
-  // --- 2. GIANT MOBILE TOUCH UI STYLES ---
+  // --- 2. MASSIVE TOUCH UI STYLES ---
   const shellStyles = `
     html, body {
       overflow: hidden !important;
@@ -40,7 +40,7 @@
       inset: 0 !important;
       width: 100vw !important;
       height: 100vh !important;
-      background: #121212 !important;
+      background: #000000 !important;
       color: #ffffff !important;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
       z-index: 2147483647 !important;
@@ -53,7 +53,7 @@
 
     /* Giant Header */
     .sp-shell-header {
-      padding: 24px 28px 12px 28px !important;
+      padding: 24px 24px 8px 24px !important;
       display: flex !important;
       justify-content: space-between !important;
       align-items: center !important;
@@ -62,74 +62,71 @@
     .sp-shell-header h1 {
       font-size: 38px !important;
       font-weight: 900 !important;
-      letter-spacing: -1px !important;
       margin: 0 !important;
     }
     .sp-pill-ad {
-      font-size: 18px !important;
+      font-size: 20px !important;
       font-weight: 800 !important;
       padding: 8px 18px !important;
-      border-radius: 24px !important;
+      border-radius: 20px !important;
       background: #e91429 !important;
       color: #fff !important;
       animation: shell-blink 0.8s infinite alternate !important;
     }
     .sp-pill-song {
-      font-size: 18px !important;
-      font-weight: 700 !important;
+      font-size: 20px !important;
+      font-weight: 800 !important;
       padding: 8px 18px !important;
-      border-radius: 24px !important;
+      border-radius: 20px !important;
       background: #1db954 !important;
       color: #000 !important;
     }
     @keyframes shell-blink {
-      from { opacity: 0.6; }
+      from { opacity: 0.5; }
       to { opacity: 1; }
     }
 
-    /* Body Container */
+    /* Scrollable Container with Massive Artwork */
     .sp-shell-body {
       flex: 1 !important;
       overflow-y: auto !important;
-      padding: 10px 24px 220px 24px !important;
+      padding: 8px 16px 270px 16px !important;
       -webkit-overflow-scrolling: touch !important;
       display: flex !important;
       flex-direction: column !important;
       align-items: center !important;
     }
 
-    /* Mobile Hero Player Card */
     .sp-hero-card {
       width: 100% !important;
-      max-width: 600px !important;
-      background: linear-gradient(180deg, #242424 0%, #161616 100%) !important;
-      border-radius: 28px !important;
-      padding: 32px 24px !important;
-      box-sizing: border-box !important;
       display: flex !important;
       flex-direction: column !important;
       align-items: center !important;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.7) !important;
+      box-sizing: border-box !important;
     }
+
+    /* GIGANTIC EDGE-TO-EDGE ARTWORK */
     .sp-hero-img {
-      width: 80vw !important;
-      max-width: 420px !important;
+      width: 92vw !important;
+      max-width: 500px !important;
       aspect-ratio: 1 / 1 !important;
-      border-radius: 20px !important;
+      border-radius: 24px !important;
       object-fit: cover !important;
-      box-shadow: 0 16px 40px rgba(0,0,0,0.8) !important;
-      margin-bottom: 28px !important;
-      background: #282828 !important;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.9) !important;
+      margin-bottom: 24px !important;
+      background: #181818 !important;
     }
+
     .sp-hero-info {
-      width: 100% !important;
+      width: 92vw !important;
+      max-width: 500px !important;
       text-align: left !important;
       margin-bottom: 12px !important;
     }
     .sp-hero-title {
-      font-size: 32px !important;
-      font-weight: 800 !important;
-      line-height: 1.25 !important;
+      font-size: 34px !important;
+      font-weight: 900 !important;
+      line-height: 1.2 !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
@@ -137,85 +134,87 @@
       color: #ffffff !important;
     }
     .sp-hero-artist {
-      font-size: 24px !important;
-      font-weight: 500 !important;
-      color: #b3b3b3 !important;
-      margin-top: 8px !important;
+      font-size: 26px !important;
+      font-weight: 600 !important;
+      color: #a7a7a7 !important;
+      margin-top: 6px !important;
       white-space: nowrap !important;
       overflow: hidden !important;
       text-overflow: ellipsis !important;
       display: block !important;
     }
 
-    /* Oversized Scrubber Bar & Timestamps */
+    /* MASSIVE INTERACTIVE TIMELINE */
     .sp-scrubber-box {
-      width: 100% !important;
-      margin: 20px 0 6px 0 !important;
-      padding: 20px 0 !important; /* Huge tap & drag hit area */
+      width: 92vw !important;
+      max-width: 500px !important;
+      margin: 16px 0 0 0 !important;
+      padding: 24px 0 !important;
       cursor: pointer !important;
       touch-action: none !important;
     }
     .sp-scrubber-rail {
       width: 100% !important;
-      height: 12px !important;
-      background: #404040 !important;
-      border-radius: 6px !important;
+      height: 18px !important;
+      background: #333333 !important;
+      border-radius: 9px !important;
       position: relative !important;
     }
     .sp-scrubber-fill {
       width: 0% !important;
       height: 100% !important;
       background: #1db954 !important;
-      border-radius: 6px !important;
+      border-radius: 9px !important;
       position: relative !important;
     }
     .sp-scrubber-handle {
       position: absolute !important;
-      right: -10px !important;
-      top: -6px !important;
-      width: 24px !important;
-      height: 24px !important;
+      right: -18px !important;
+      top: -9px !important;
+      width: 36px !important;
+      height: 36px !important;
       background: #ffffff !important;
       border-radius: 50% !important;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.8) !important;
     }
     .sp-time-row {
       display: flex !important;
       justify-content: space-between !important;
-      width: 100% !important;
-      margin-top: 4px !important;
-      font-size: 18px !important;
-      font-weight: 600 !important;
-      color: #a7a7a7 !important;
+      width: 92vw !important;
+      max-width: 500px !important;
+      margin-top: 2px !important;
+      font-size: 24px !important;
+      font-weight: 700 !important;
+      color: #888888 !important;
     }
 
-    /* Bottom Dock (Controls + Tabs) */
+    /* FIXED BOTTOM SECTION */
     .sp-bottom-dock {
       position: absolute !important;
       bottom: 0 !important;
       left: 0 !important;
       right: 0 !important;
-      background: linear-gradient(180deg, rgba(18,18,18,0) 0%, #000000 35%) !important;
+      background: linear-gradient(180deg, rgba(0,0,0,0) 0%, #000000 25%) !important;
       display: flex !important;
       flex-direction: column !important;
-      padding-bottom: env(safe-area-inset-bottom, 14px) !important;
+      padding-bottom: env(safe-area-inset-bottom, 16px) !important;
     }
 
-    /* Giant Touch Buttons */
+    /* HUGE CONTROLS ROW */
     .sp-dock-controls {
       display: flex !important;
       justify-content: space-evenly !important;
       align-items: center !important;
-      padding: 16px 12px 24px 12px !important;
+      padding: 16px 12px 28px 12px !important;
     }
     .sp-dock-controls button {
       background: transparent !important;
       border: none !important;
       color: #b3b3b3 !important;
       cursor: pointer !important;
-      padding: 14px !important;
-      min-width: 64px !important;
-      min-height: 64px !important;
+      padding: 16px !important;
+      min-width: 76px !important;
+      min-height: 76px !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
@@ -225,53 +224,58 @@
       -webkit-tap-highlight-color: transparent !important;
     }
     .sp-dock-controls button:active {
-      transform: scale(0.86) !important;
+      transform: scale(0.85) !important;
     }
     .sp-dock-controls button svg {
-      width: 44px !important;
-      height: 44px !important;
+      width: 54px !important;
+      height: 54px !important;
       fill: currentColor !important;
     }
 
-    /* Active State Glow for Shuffle / Repeat */
+    /* SHUFFLE / REPEAT ACTIVE STYLES (BRIGHT GREEN + GLOW + DOT) */
     .sp-dock-controls button.is-active {
       color: #1db954 !important;
+    }
+    .sp-dock-controls button.is-active svg {
+      fill: #1db954 !important;
+      filter: drop-shadow(0 0 6px rgba(29, 185, 84, 0.8)) !important;
     }
     .sp-dock-controls button.is-active::after {
       content: '' !important;
       position: absolute !important;
-      bottom: 6px !important;
-      width: 6px !important;
-      height: 6px !important;
+      bottom: 8px !important;
+      width: 8px !important;
+      height: 8px !important;
       background: #1db954 !important;
       border-radius: 50% !important;
     }
 
+    /* MONSTROUS PLAY / PAUSE BUTTON */
     .sp-play-circle {
       background: #1db954 !important;
       color: #000000 !important;
-      width: 90px !important;
-      height: 90px !important;
+      width: 120px !important;
+      height: 120px !important;
       border-radius: 50% !important;
-      box-shadow: 0 6px 24px rgba(29, 185, 84, 0.5) !important;
+      box-shadow: 0 8px 30px rgba(29, 185, 84, 0.5) !important;
     }
     .sp-play-circle:active {
       transform: scale(0.92) !important;
     }
     .sp-play-circle svg {
-      width: 42px !important;
-      height: 42px !important;
+      width: 58px !important;
+      height: 58px !important;
       fill: #000000 !important;
     }
 
-    /* Bottom Navigation Tabs */
+    /* TABS */
     .sp-dock-tabs {
-      height: 74px !important;
+      height: 80px !important;
       background: #000000 !important;
       display: flex !important;
       justify-content: space-around !important;
       align-items: center !important;
-      border-top: 1px solid #222222 !important;
+      border-top: 1px solid #1a1a1a !important;
     }
     .sp-tab {
       display: flex !important;
@@ -280,8 +284,8 @@
       justify-content: center !important;
       background: none !important;
       border: none !important;
-      color: #b3b3b3 !important;
-      font-size: 15px !important;
+      color: #888888 !important;
+      font-size: 17px !important;
       font-weight: 700 !important;
       gap: 6px !important;
       cursor: pointer !important;
@@ -290,8 +294,8 @@
       -webkit-tap-highlight-color: transparent !important;
     }
     .sp-tab svg {
-      width: 32px !important;
-      height: 32px !important;
+      width: 38px !important;
+      height: 38px !important;
       fill: currentColor !important;
     }
     .sp-tab.active {
@@ -303,12 +307,9 @@
   sheet.textContent = shellStyles;
   document.head.appendChild(sheet);
 
-  // --- 3. AUDIO ENGINE & FAST-FORWARD ---
-  let cachedMedia = null;
+  // --- 3. HARDWARE SEEK ENGINE ---
   function getMedia() {
-    const el = document.querySelector('audio, video');
-    if (el && el !== cachedMedia) cachedMedia = el;
-    return cachedMedia;
+    return document.querySelector('audio, video');
   }
 
   function isAd() {
@@ -328,31 +329,36 @@
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   }
 
-  // --- 4. RELIABLE SCRUBBING ENGINE ---
-  let isDraggingScrubber = false;
+  // Seeks by clicking & dragging on Spotify's genuine desktop progressbar element
+  function directSpotifySeek(percentage) {
+    // 1. Target Spotify's actual slider rail
+    const nativeBar = document.querySelector('[data-testid="playback-progressbar"]');
+    if (nativeBar) {
+      const rect = nativeBar.getBoundingClientRect();
+      const targetX = rect.left + (rect.width * percentage);
+      const targetY = rect.top + (rect.height / 2);
 
-  function executeSeek(percentage) {
-    // 1. Try Spotify's internal desktop slider via simulated click
-    const desktopProgress = document.querySelector('[data-testid="playback-progressbar"]');
-    if (desktopProgress) {
-      const rect = desktopProgress.getBoundingClientRect();
-      const clickX = rect.left + (rect.width * percentage);
-      const clickY = rect.top + (rect.height / 2);
-      
-      const evtDown = new MouseEvent('mousedown', { bubbles: true, clientX: clickX, clientY: clickY });
-      const evtUp = new MouseEvent('mouseup', { bubbles: true, clientX: clickX, clientY: clickY });
-      desktopProgress.dispatchEvent(evtDown);
-      desktopProgress.dispatchEvent(evtUp);
+      const down = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX: targetX, clientY: targetY, pointerId: 1 });
+      const move = new PointerEvent('pointermove', { bubbles: true, cancelable: true, clientX: targetX, clientY: targetY, pointerId: 1 });
+      const up = new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX: targetX, clientY: targetY, pointerId: 1 });
+
+      nativeBar.dispatchEvent(down);
+      window.dispatchEvent(move);
+      window.dispatchEvent(up);
     }
 
-    // 2. Fallback to direct HTML5 media seek
+    // 2. Also sync direct audio tag time
     const media = getMedia();
     if (media && media.duration) {
-      media.currentTime = media.duration * percentage;
+      try {
+        media.currentTime = media.duration * percentage;
+      } catch (err) {}
     }
   }
 
-  // --- 5. POLL STATE & UPDATE VISUAL INDICATORS ---
+  // --- 4. CONTINUOUS STATE ENGINE ---
+  let isDraggingScrubber = false;
+
   function syncState() {
     const media = getMedia();
     if (!media) return;
@@ -365,7 +371,6 @@
       media.defaultPlaybackRate = targetSpeed;
     }
 
-    // Shell UI Elements
     const badge = document.getElementById('sp-shell-badge');
     const title = document.getElementById('sp-shell-title');
     const artist = document.getElementById('sp-shell-artist');
@@ -382,6 +387,7 @@
       badge.className = ad ? 'sp-pill-ad' : 'sp-pill-song';
     }
 
+    // Song metadata
     if (navigator.mediaSession?.metadata) {
       const meta = navigator.mediaSession.metadata;
       if (title) title.innerText = meta.title || 'Playing';
@@ -391,29 +397,34 @@
       }
     }
 
-    // Play/Pause icon sync
+    // Play/Pause icon
     if (playSvg) {
       if (media.paused) {
-        playSvg.innerHTML = '<polygon points="8 6 26 16 8 26 8 6"></polygon>';
+        playSvg.innerHTML = '<polygon points="10 8 30 20 10 32 10 8"></polygon>';
       } else {
-        playSvg.innerHTML = '<rect x="8" y="6" width="6" height="20"></rect><rect x="18" y="6" width="6" height="20"></rect>';
+        playSvg.innerHTML = '<rect x="9" y="8" width="7" height="24"></rect><rect x="23" y="8" width="7" height="24"></rect>';
       }
     }
 
-    // Shuffle & Repeat Active States (reading desktop DOM aria attributes)
+    // --- ACCURATE SHUFFLE & REPEAT DETECTION ---
     const nativeShuf = document.querySelector('[data-testid="control-button-shuffle"]');
     if (nativeShuf && btnShuf) {
-      const active = nativeShuf.getAttribute('aria-checked') === 'true';
-      btnShuf.classList.toggle('is-active', active);
+      const isAriaTrue = nativeShuf.getAttribute('aria-checked') === 'true';
+      const hasActiveLabel = (nativeShuf.getAttribute('aria-label') || '').toLowerCase().includes('disable');
+      const hasSpotGreen = getComputedStyle(nativeShuf).color.includes('29, 185, 84') || nativeShuf.classList.contains('active');
+      btnShuf.classList.toggle('is-active', isAriaTrue || hasActiveLabel || hasSpotGreen);
     }
 
     const nativeRep = document.querySelector('[data-testid="control-button-repeat"]');
     if (nativeRep && btnRep) {
-      const repState = nativeRep.getAttribute('aria-checked');
-      btnRep.classList.toggle('is-active', repState === 'true' || repState === 'mixed');
+      const repVal = nativeRep.getAttribute('aria-checked');
+      const isRepAria = repVal === 'true' || repVal === 'mixed';
+      const hasRepLabel = (nativeRep.getAttribute('aria-label') || '').toLowerCase().includes('disable') || (nativeRep.getAttribute('aria-label') || '').toLowerCase().includes('repeat one');
+      const hasRepGreen = getComputedStyle(nativeRep).color.includes('29, 185, 84');
+      btnRep.classList.toggle('is-active', isRepAria || hasRepLabel || hasRepGreen);
     }
 
-    // Progress Bar & Time
+    // Timeline updates
     if (!isDraggingScrubber && media.duration) {
       const pct = (media.currentTime / media.duration) * 100;
       if (progress) progress.style.width = `${pct}%`;
@@ -422,15 +433,19 @@
     }
   }
 
-  setInterval(syncState, 200);
+  setInterval(syncState, 150);
 
-  // --- 6. CONTROLLER TRIGGERS ---
+  // --- 5. DISPATCH ACTIONS TO SPOTIFY'S DESKTOP BAR ---
   function clickDesktop(testId) {
     const el = document.querySelector(`[data-testid="${testId}"]`);
-    if (el) el.click();
-    setTimeout(syncState, 50);
+    if (el) {
+      el.click();
+      // Immediately run sync so UI updates with zero lag
+      setTimeout(syncState, 40);
+    }
   }
 
+  // --- 6. MOUNT FULLSCREEN SHELL ---
   function mountShell() {
     if (document.getElementById('sp-mobile-shell')) return;
 
@@ -447,13 +462,13 @@
 
       <div class="sp-shell-body">
         <div class="sp-hero-card">
-          <img id="sp-shell-art" class="sp-hero-img" src="" alt="Album Art" />
+          <img id="sp-shell-art" class="sp-hero-img" src="" alt="Album Artwork" />
           <div class="sp-hero-info">
             <span id="sp-shell-title" class="sp-hero-title">Connecting...</span>
             <span id="sp-shell-artist" class="sp-hero-artist">Spotify</span>
           </div>
 
-          <!-- Interactive Scrubber -->
+          <!-- MASSIVE SCRUBBER -->
           <div class="sp-scrubber-box" id="sp-scrub-box">
             <div class="sp-scrubber-rail" id="sp-rail">
               <div class="sp-scrubber-fill" id="sp-shell-fill">
@@ -474,13 +489,13 @@
             <svg viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
           </button>
           <button id="sp-btn-prev" title="Previous">
-            <svg viewBox="0 0 24 24"><path d="M6 6h2.5v12H6zm3.5 6l9 6.5V5.5z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M6 6h3v12H6zm4 6l10 7.5V4.5z"/></svg>
           </button>
           <button id="sp-btn-play" class="sp-play-circle" title="Play/Pause">
-            <svg id="sp-shell-playsvg" viewBox="0 0 32 32"><polygon points="8 6 26 16 8 26 8 6"></polygon></svg>
+            <svg id="sp-shell-playsvg" viewBox="0 0 40 40"><polygon points="10 8 30 20 10 32 10 8"></polygon></svg>
           </button>
           <button id="sp-btn-next" title="Next">
-            <svg viewBox="0 0 24 24"><path d="M5.5 18.5l9-6.5-9-6.5v13zM15.5 6H18v12h-2.5z"/></svg>
+            <svg viewBox="0 0 24 24"><path d="M4 19.5l10-7.5-10-7.5v15zM15 6h3v12h-3z"/></svg>
           </button>
           <button id="sp-btn-rep" title="Repeat">
             <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
@@ -513,23 +528,22 @@
     document.getElementById('sp-btn-shuf')?.addEventListener('click', () => clickDesktop('control-button-shuffle'));
     document.getElementById('sp-btn-rep')?.addEventListener('click', () => clickDesktop('control-button-repeat'));
 
-    // Drag-and-Tap Scrubber Handlers
+    // --- RELIABLE DRAG & TOUCH TIMELINE SCRUBBING ---
     const scrubBox = document.getElementById('sp-scrub-box');
     const rail = document.getElementById('sp-rail');
     const fill = document.getElementById('sp-shell-fill');
 
-    function updateFromPointer(e) {
+    function calculateRatio(e) {
       const rect = rail.getBoundingClientRect();
-      const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      fill.style.width = `${ratio * 100}%`;
-      return ratio;
+      const x = e.clientX ?? (e.touches && e.touches[0]?.clientX) ?? 0;
+      return Math.max(0, Math.min(1, (x - rect.left) / rect.width));
     }
 
     scrubBox.addEventListener('pointerdown', (e) => {
       isDraggingScrubber = true;
       scrubBox.setPointerCapture(e.pointerId);
-      const ratio = updateFromPointer(e);
+      const ratio = calculateRatio(e);
+      fill.style.width = `${ratio * 100}%`;
       const media = getMedia();
       if (media?.duration) {
         document.getElementById('sp-time-curr').innerText = formatTime(media.duration * ratio);
@@ -538,7 +552,8 @@
 
     scrubBox.addEventListener('pointermove', (e) => {
       if (!isDraggingScrubber) return;
-      const ratio = updateFromPointer(e);
+      const ratio = calculateRatio(e);
+      fill.style.width = `${ratio * 100}%`;
       const media = getMedia();
       if (media?.duration) {
         document.getElementById('sp-time-curr').innerText = formatTime(media.duration * ratio);
@@ -547,14 +562,14 @@
 
     scrubBox.addEventListener('pointerup', (e) => {
       if (!isDraggingScrubber) return;
-      const ratio = updateFromPointer(e);
-      executeSeek(ratio);
-      setTimeout(() => { isDraggingScrubber = false; }, 150);
+      const ratio = calculateRatio(e);
+      directSpotifySeek(ratio);
+      setTimeout(() => { isDraggingScrubber = false; }, 200);
     });
   }
 
   const mountLoop = setInterval(() => {
     mountShell();
     if (document.getElementById('sp-mobile-shell')) clearInterval(mountLoop);
-  }, 250);
+  }, 200);
 })();
