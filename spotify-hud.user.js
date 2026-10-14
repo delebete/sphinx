@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.2
+// @version      9.3
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -40,7 +40,7 @@
     if (e.touches && e.touches.length > 1) e.preventDefault();
   }, { passive: false });
 
-  // --- 2. INJECT CSS (NO BACKSLASHES OR ESCAPES) ---
+  // --- 2. INJECT CSS ---
   var cssLines = [
     '* { box-sizing: border-box !important; -webkit-tap-highlight-color: transparent !important; }',
     '#sp-peek-btn { position: fixed !important; top: 1.8vh !important; right: 4vw !important; z-index: 2147483647 !important; background: rgba(18, 18, 18, 0.92) !important; backdrop-filter: blur(12px) !important; color: #ffffff !important; border: 0.3vw solid rgba(255, 255, 255, 0.2) !important; border-radius: 50vw !important; padding: 1vh 3.4vw !important; font-size: 3.1vw !important; font-weight: 700 !important; font-family: sans-serif !important; display: flex !important; align-items: center !important; gap: 1.5vw !important; box-shadow: 0 0.8vh 2.4vh rgba(0,0,0,0.7) !important; cursor: pointer !important; user-select: none !important; }',
@@ -82,7 +82,7 @@
     '.sp-ctrl-btn svg { width: 7.5vw !important; height: 7.5vw !important; fill: currentColor !important; }',
     '.sp-ctrl-btn.primary-skip svg { width: 8.8vw !important; height: 8.8vw !important; }',
     '.sp-ctrl-btn.state-active { color: #1db954 !important; }',
-    '.sp-ctrl-btn.state-active::after { content: "" !important; position: absolute !important; bottom: 0.6vw !important; width: 1.4vw !important; height: 1.4vw !important; background: #1db954 !important; border-radius: 50% !important; }',
+    '.sp-ctrl-btn.state-active::after { content: \'\' !important; position: absolute !important; bottom: 0.6vw !important; width: 1.4vw !important; height: 1.4vw !important; background: #1db954 !important; border-radius: 50% !important; }',
     '.sp-mode-badge { position: absolute !important; top: 0.8vw !important; right: 0.6vw !important; background: #1db954 !important; color: #000000 !important; font-size: 2.5vw !important; font-weight: 900 !important; min-width: 3.8vw !important; height: 3.8vw !important; padding: 0 0.4vw !important; border-radius: 50vw !important; display: none !important; align-items: center !important; justify-content: center !important; line-height: 1 !important; }',
     '.sp-ctrl-btn.show-badge .sp-mode-badge { display: flex !important; }',
     '.sp-play-main { background: #ffffff !important; color: #000000 !important; width: 18.5vw !important; height: 18.5vw !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; border: none !important; box-shadow: 0 0.8vh 2.5vh rgba(0,0,0,0.5) !important; cursor: pointer !important; }',
@@ -626,10 +626,6 @@
     var label = String(nativeShuf.getAttribute('aria-label') || '').toLowerCase();
     var checked = String(nativeShuf.getAttribute('aria-checked') || '').toLowerCase();
 
-    // User's specific label rules:
-    // "Enable Smart Shuffle for..." = currently Regular Shuffle (active)
-    // "Disable Smart Shuffle for..." = currently Smart Shuffle (active + badge)
-    // "Enable Shuffle for..." = currently No Shuffle (off)
     if (label.indexOf('enable smart shuffle') !== -1) {
       return { active: true, smart: false };
     }
@@ -918,7 +914,7 @@
       '<div id="sp-view-search" class="sp-view-panel">' +
         '<div class="sp-section-header"><span>Search</span></div>' +
         '<div class="sp-search-bar">' +
-          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
+          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>' +
           '<input id="sp-search-input" class="sp-search-input" type="text" placeholder="What do you want to listen to?" />' +
         '</div>' +
         '<div id="sp-search-results" class="sp-item-list"></div>' +
@@ -946,7 +942,7 @@
           '<span>Playing</span>' +
         '</button>' +
         '<button id="sp-tab-search" class="sp-nav-btn">' +
-          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
+          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>' +
           '<span>Search</span>' +
         '</button>' +
         '<button id="sp-tab-library" class="sp-nav-btn">' +
