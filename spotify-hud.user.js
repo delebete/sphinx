@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.5
+// @version      9.6
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -36,14 +36,12 @@
       if (isMobile) {
         meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover';
       } else {
-        // Desktop view: allow user zoom, panning, and responsive desktop scrolling
         meta.content = 'width=device-width, initial-scale=1.0, user-scalable=yes';
       }
     }
   }
   setViewportMode(true);
 
-  // Only suppress gestures when Mobile UI is active
   document.addEventListener('gesturestart', function (e) {
     if (!isMobileShellHidden()) e.preventDefault();
   }, { passive: false });
@@ -110,8 +108,8 @@
     '.sp-play-main { background: #ffffff !important; color: #000000 !important; width: 18.5vw !important; height: 18.5vw !important; border-radius: 50% !important; display: flex !important; align-items: center !important; justify-content: center !important; border: none !important; box-shadow: 0 0.8vh 2.5vh rgba(0,0,0,0.5) !important; cursor: pointer !important; }',
     '.sp-play-main:active { transform: scale(0.92) !important; }',
     '.sp-play-main svg { width: 8.5vw !important; height: 8.5vw !important; fill: #000000 !important; }',
-    '.sp-section-header { font-size: 6vw !important; font-weight: 800 !important; margin: 1vh 0 1.8vh 0 !important; display: flex !important; justify-content: space-between !important; align-items: center !important; flex-shrink: 0 !important; }',
-    '.sp-action-pill { background: #282828 !important; color: #ffffff !important; border: none !important; padding: 1vh 3.5vw !important; border-radius: 50vw !important; font-size: 3.2vw !important; font-weight: 700 !important; cursor: pointer !important; }',
+    '.sp-section-header { font-size: 5.6vw !important; font-weight: 800 !important; margin: 1vh 0 1.5vh 0 !important; display: flex !important; justify-content: space-between !important; align-items: center !important; flex-shrink: 0 !important; }',
+    '.sp-action-pill { background: #282828 !important; color: #ffffff !important; border: none !important; padding: 0.8vh 3.2vw !important; border-radius: 50vw !important; font-size: 3vw !important; font-weight: 700 !important; cursor: pointer !important; }',
     '.sp-search-bar { width: 100% !important; background: #ffffff !important; border-radius: 2vw !important; padding: 1.4vh 3.5vw !important; display: flex !important; align-items: center !important; gap: 2.5vw !important; margin-bottom: 2vh !important; flex-shrink: 0 !important; }',
     '.sp-search-bar svg { width: 5.5vw !important; height: 5.5vw !important; fill: #121212 !important; flex-shrink: 0 !important; }',
     '.sp-search-input { border: none !important; outline: none !important; background: transparent !important; color: #000000 !important; font-size: 4vw !important; font-weight: 600 !important; width: 100% !important; }',
@@ -125,8 +123,8 @@
     '.sp-card-play-btn { width: 10vw !important; height: 10vw !important; border-radius: 50% !important; background: #1db954 !important; color: #000000 !important; border: none !important; display: flex !important; align-items: center !important; justify-content: center !important; flex-shrink: 0 !important; }',
     '.sp-card-play-btn svg { width: 4.8vw !important; height: 4.8vw !important; fill: #000000 !important; }',
     '.sp-bottom-nav { height: 9vh !important; background: #000000 !important; border-top: 0.15vh solid rgba(255, 255, 255, 0.1) !important; display: flex !important; justify-content: space-around !important; align-items: center !important; flex-shrink: 0 !important; }',
-    '.sp-nav-btn { flex: 1 !important; height: 100% !important; background: none !important; border: none !important; color: #b3b3b3 !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 0.6vh !important; font-size: 2.9vw !important; font-weight: 600 !important; cursor: pointer !important; }',
-    '.sp-nav-btn svg { width: 6vw !important; height: 6vw !important; fill: currentColor !important; }',
+    '.sp-nav-btn { flex: 1 !important; height: 100% !important; background: none !important; border: none !important; color: #b3b3b3 !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 0.5vh !important; font-size: 2.6vw !important; font-weight: 600 !important; cursor: pointer !important; padding: 0 0.5vw !important; }',
+    '.sp-nav-btn svg { width: 5.4vw !important; height: 5.4vw !important; fill: currentColor !important; }',
     '.sp-nav-btn.active-tab { color: #ffffff !important; }'
   ];
 
@@ -384,14 +382,27 @@
     return { active: false, smart: false };
   }
 
+  // Scoped strictly to player bar to avoid matching sidebar or playlist buttons
   function getNativeLikeButton() {
-    return document.querySelector(
-      'button[aria-label*="Liked Songs"], ' +
-      'button[aria-label*="Your Library"], ' +
-      '[data-testid="now-playing-bar"] button[data-testid="add-button"], ' +
-      'footer button[data-testid="add-button"], ' +
-      'button[data-testid="add-button"]'
-    );
+    var bar = document.querySelector('footer, [data-testid="now-playing-bar"]');
+    if (bar) {
+      var btn = bar.querySelector(
+        'button[aria-label="Add to Liked Songs"], ' +
+        'button[aria-label="Add to playlist"], ' +
+        'button[aria-label*="Liked Songs"], ' +
+        'button[aria-label*="Your Library"], ' +
+        'button[data-testid="add-button"]'
+      );
+      if (btn) return btn;
+    }
+
+    var allBtns = document.querySelectorAll('button[aria-label="Add to Liked Songs"], button[aria-label="Add to playlist"]');
+    for (var i = allBtns.length - 1; i >= 0; i--) {
+      if (!allBtns[i].closest('[role="grid"]') && !allBtns[i].closest('nav')) {
+        return allBtns[i];
+      }
+    }
+    return null;
   }
 
   function getLikeState() {
@@ -399,34 +410,59 @@
     if (!btn) return false;
 
     var checked = String(btn.getAttribute('aria-checked') || '').toLowerCase();
-    if (checked === 'true') return true;
-    if (checked === 'false') return false;
-
     var label = String(btn.getAttribute('aria-label') || '').toLowerCase();
-    if (label.indexOf('remove') !== -1 || label.indexOf('added') !== -1 || label.indexOf('saved') !== -1) {
-      return true;
-    }
-    if (label.indexOf('add to') !== -1 || label.indexOf('save to') !== -1) {
-      return false;
-    }
-
     var classes = String(btn.className || '');
-    if (classes.indexOf('bright-accent') !== -1) return true;
-    if (classes.indexOf('text-subdued') !== -1) return false;
 
-    var col = window.getComputedStyle(btn).color;
-    if (col.indexOf('29, 185, 84') !== -1 || col.indexOf('30, 215, 96') !== -1) {
+    // Spotify's Encore Pattern:
+    // Liked: aria-label="Add to playlist" (aria-checked="true", bright-accent class)
+    // Not Liked: aria-label="Add to Liked Songs" (aria-checked="false", text-subdued)
+    if (checked === 'true' || label === 'add to playlist' || label.indexOf('remove') !== -1 || classes.indexOf('bright-accent') !== -1) {
       return true;
+    }
+    if (checked === 'false' || label === 'add to liked songs' || classes.indexOf('text-subdued') !== -1) {
+      return false;
     }
     return false;
   }
 
-  // --- 6. SCRAPERS (PLAYLISTS, QUEUE & SEARCH) ---
+  function handleLikeButtonClick() {
+    var nativeLike = getNativeLikeButton();
+    if (!nativeLike) return;
+
+    var currentlyLiked = getLikeState();
+    if (!currentlyLiked) {
+      // 1-click add to Liked Songs
+      robustClick(nativeLike);
+      setTimeout(syncState, 150);
+      setTimeout(syncState, 450);
+    } else {
+      // Unlike opens playlist selection dialog; automatically uncheck Liked Songs and close
+      robustClick(nativeLike);
+
+      var checkTimer = setInterval(function () {
+        var popover = document.querySelector('[data-testid="add-to-playlist-menu"], [role="dialog"], [data-encore-id="popover"], div[data-tippy-root]');
+        if (popover) {
+          clearInterval(checkTimer);
+          var likedOption = popover.querySelector('button[aria-label*="Liked Songs"], [role="menuitemcheckbox"][aria-checked="true"], input[type="checkbox"]:checked, [data-encore-id="listRow"]');
+          if (likedOption) {
+            robustClick(likedOption);
+          }
+          setTimeout(function () {
+            document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Escape', code: 'Escape', keyCode: 27 }));
+            setTimeout(syncState, 200);
+          }, 150);
+        }
+      }, 50);
+
+      setTimeout(function () { clearInterval(checkTimer); }, 1500);
+    }
+  }
+
+  // --- 6. SCRAPERS (PLAYLISTS, TRACKS, QUEUE & SEARCH) ---
   function refreshLibraryList() {
     var container = document.getElementById('sp-library-list');
     if (!container) return;
 
-    // Strict query inside Your Library grid to avoid grabbing queue/search tracks
     var libGrid = document.querySelector('div[role="grid"][aria-label="Your Library"]');
     var rows = libGrid
       ? libGrid.querySelectorAll('[data-encore-id="listRow"]')
@@ -497,12 +533,13 @@
           '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
           '</button>';
 
+        // Tapping opens the playlist and directs to Tracks tab
         card.addEventListener('click', function (e) {
           if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
           robustClick(data.openTarget);
           setTimeout(function () {
-            switchTab('queue');
-          }, 550);
+            switchTab('tracks');
+          }, 450);
         });
 
         var btn = card.querySelector('.sp-card-play-btn');
@@ -525,11 +562,12 @@
     }
   }
 
-  function extractEncoreTrackRow(row, idx) {
-    var titleEl = row.querySelector('[data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"], [data-testid="internal-track-link"]');
+  function extractTrackData(row, idx) {
+    // Check main playlist track row format
+    var titleEl = row.querySelector('[data-testid="internal-track-link"] div, [data-testid="internal-track-link"], [data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"]');
     var title = titleEl ? titleEl.innerText.trim() : 'Track ' + (idx + 1);
 
-    var artistLinks = row.querySelectorAll('[data-encore-id="listRowSubtitle"] a[href*="/artist/"], a[href*="/artist/"]');
+    var artistLinks = row.querySelectorAll('a[href*="/artist/"]');
     var artist = '';
     if (artistLinks.length > 0) {
       var arr = [];
@@ -551,15 +589,15 @@
 
     var imgEl = row.querySelector('img[data-testid="entity-image"], img');
     var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
-    var playBtn = row.querySelector('button[data-testid="play-button"], button[aria-label*="Play"]');
-    var clickTarget = playBtn || row.querySelector('.e-10860-legacy-list-row__row-button') || row;
+    var playBtn = row.querySelector('button[aria-label*="Play"], button[aria-label*="Pause"], button[data-testid="play-button"]');
+    var clickTarget = playBtn || row.querySelector('[data-testid="internal-track-link"], .e-10860-legacy-list-row__row-button') || row;
 
     return { title: title, artist: artist, imgSrc: imgSrc, clickTarget: clickTarget, playBtn: playBtn, row: row };
   }
 
-  function renderTrackRows(rows, container) {
+  function renderRowsToContainer(rows, container, emptyMsg) {
     if (!rows || !rows.length) {
-      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No tracks found. Open a playlist in Library or tap Queue!</div>';
+      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">' + emptyMsg + '</div>';
       return;
     }
 
@@ -587,30 +625,43 @@
         };
 
         container.appendChild(card);
-      })(extractEncoreTrackRow(rows[i], i));
+      })(extractTrackData(rows[i], i));
     }
   }
 
+  // --- SEPARATE TAB 1: TRACKS (Current Playlist / Album in view) ---
+  function refreshTracksList() {
+    var container = document.getElementById('sp-tracks-list');
+    if (!container) return;
+
+    var rows = document.querySelectorAll(
+      '[data-testid="track-list"] [data-testid="tracklist-row"], [data-testid="tracklist-row"]'
+    );
+    renderRowsToContainer(rows, container, 'No tracks open. Select a playlist in Library to view tracks here!');
+  }
+
+  // --- SEPARATE TAB 2: QUEUE (The Next Up list) ---
   function refreshQueueList() {
     var container = document.getElementById('sp-queue-list');
     if (!container) return;
 
-    var rows = document.querySelectorAll(
-      'ul[role="treegrid"] li[role="row"], ul[aria-label="Next up"] li[role="row"], [data-testid="tracklist-row"]'
-    );
+    var queueList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"]');
+    var rows = queueList ? queueList.querySelectorAll('li[role="row"]') : [];
 
     if (!rows.length) {
+      // Auto-mount native queue drawer in background
       var qBtn = document.querySelector('[data-testid="control-button-queue"], button[aria-label*="Queue"]');
       if (qBtn) robustClick(qBtn);
+
       setTimeout(function () {
-        var updatedRows = document.querySelectorAll(
-          'ul[role="treegrid"] li[role="row"], ul[aria-label="Next up"] li[role="row"], [data-testid="tracklist-row"]'
-        );
-        renderTrackRows(updatedRows, container);
-      }, 450);
+        var updatedList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"]');
+        var updatedRows = updatedList ? updatedList.querySelectorAll('li[role="row"]') : [];
+        renderRowsToContainer(updatedRows, container, 'Queue is empty or loading. Tap Reload!');
+      }, 500);
       return;
     }
-    renderTrackRows(rows, container);
+
+    renderRowsToContainer(rows, container, 'Queue is empty. Add songs to queue or tap Reload!');
   }
 
   function setNativeInputValue(input, val) {
@@ -651,7 +702,7 @@
         var resultRows = document.querySelectorAll(
           '#search-dropdown [data-encore-id="listRow"], ul[data-encore-id="typeList"] [data-encore-id="listRow"], [data-encore-id="listRow"][role="row"], [data-testid="tracklist-row"]'
         );
-        renderTrackRows(resultRows, resultsContainer);
+        renderRowsToContainer(resultRows, resultsContainer, 'No search results found.');
       }, 700);
     }, 200);
   }
@@ -668,6 +719,7 @@
     if (b) b.classList.add('active-tab');
 
     if (tabName === 'library') refreshLibraryList();
+    if (tabName === 'tracks') refreshTracksList();
     if (tabName === 'queue') refreshQueueList();
   }
 
@@ -745,7 +797,7 @@
       var isPlaying = playLabel.indexOf('pause') !== -1;
       playSvg.innerHTML = isPlaying
         ? '<path d="M5.7 3a.7.7 0 0 0-.7.7v16.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V3.7a.7.7 0 0 0-.7-.7H5.7zm10 0a.7.7 0 0 0-.7.7v16.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V3.7a.7.7 0 0 0-.7-.7h-2.6z"></path>'
-        : '<path d="M7.05 3.606l13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606z"></path>';
+        : '<path d="M7.05 3.606l13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"></path></svg>';
     }
 
     // Shuffle Sync
@@ -773,7 +825,7 @@
       btnRep.classList.toggle('show-badge', isRepeatOne);
     }
 
-    // Like Sync (Encore Button & Attributes)
+    // Like Sync (Directly targeting Encore player bar state)
     var btnLike = document.getElementById('sp-btn-like');
     var likeSvg = document.getElementById('sp-like-svg');
     if (btnLike && likeSvg) {
@@ -784,7 +836,7 @@
         : '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>';
     }
 
-    // Timeline Sync (Direct React Input State Tracker)
+    // Timeline Sync
     if (!isUserScrubbing) {
       var rangeInput = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
       var fillEl = document.getElementById('sp-scrub-fill');
@@ -937,9 +989,17 @@
         '<div id="sp-library-list" class="sp-item-list"></div>' +
       '</div>' +
 
+      '<div id="sp-view-tracks" class="sp-view-panel">' +
+        '<div class="sp-section-header">' +
+          '<span>Playlist Tracks</span>' +
+          '<button id="sp-refresh-tracks" class="sp-action-pill">Reload</button>' +
+        '</div>' +
+        '<div id="sp-tracks-list" class="sp-item-list"></div>' +
+      '</div>' +
+
       '<div id="sp-view-queue" class="sp-view-panel">' +
         '<div class="sp-section-header">' +
-          '<span>Tracks & Queue</span>' +
+          '<span>Up Next (Queue)</span>' +
           '<button id="sp-refresh-q" class="sp-action-pill">Reload</button>' +
         '</div>' +
         '<div id="sp-queue-list" class="sp-item-list"></div>' +
@@ -958,9 +1018,13 @@
           '<svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>' +
           '<span>Library</span>' +
         '</button>' +
-        '<button id="sp-tab-queue" class="sp-nav-btn">' +
+        '<button id="sp-tab-tracks" class="sp-nav-btn">' +
           '<svg viewBox="0 0 24 24"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>' +
           '<span>Tracks</span>' +
+        '</button>' +
+        '<button id="sp-tab-queue" class="sp-nav-btn">' +
+          '<svg viewBox="0 0 24 24"><path d="M19 9H2V7h17v2zm0-4H2V3h17v2zm-6 8H2v-2h11v2zm8.5 3.5l-4.5 4.5v-9l4.5 4.5z"/></svg>' +
+          '<span>Queue</span>' +
         '</button>' +
       '</nav>';
 
@@ -983,7 +1047,6 @@
       setTimeout(syncState, 100);
     };
 
-    // Shuffle Click Handler
     document.getElementById('sp-btn-shuf').onclick = function () {
       var nativeShuf = getNativeShuffleButton();
       if (nativeShuf) {
@@ -993,21 +1056,16 @@
       }
     };
 
-    // Like Click Handler (Encore Button Supported)
-    document.getElementById('sp-btn-like').onclick = function () {
-      var nativeLike = getNativeLikeButton();
-      if (nativeLike) {
-        robustClick(nativeLike);
-        setTimeout(syncState, 120);
-        setTimeout(syncState, 400);
-      }
-    };
+    // Like Click Handler (Auto-unliking and clean toggling)
+    document.getElementById('sp-btn-like').onclick = handleLikeButtonClick;
 
     document.getElementById('sp-tab-player').onclick = function () { switchTab('player'); };
     document.getElementById('sp-tab-search').onclick = function () { switchTab('search'); };
     document.getElementById('sp-tab-library').onclick = function () { switchTab('library'); };
+    document.getElementById('sp-tab-tracks').onclick = function () { switchTab('tracks'); };
     document.getElementById('sp-tab-queue').onclick = function () { switchTab('queue'); };
     document.getElementById('sp-refresh-lib').onclick = refreshLibraryList;
+    document.getElementById('sp-refresh-tracks').onclick = refreshTracksList;
     document.getElementById('sp-refresh-q').onclick = refreshQueueList;
 
     var searchTimer = null;
