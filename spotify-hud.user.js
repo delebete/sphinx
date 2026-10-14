@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.4
+// @version      9.5
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -19,8 +19,13 @@
   var oldStyle = document.getElementById('sp-mobile-styles');
   if (oldStyle) oldStyle.remove();
 
-  // --- 1. LOCK VIEWPORT & DISABLE ZOOM ---
-  function enforceNoZoom() {
+  // --- 1. VIEWPORT & CONDITIONAL GESTURE LOCK ---
+  function isMobileShellHidden() {
+    var shell = document.getElementById('sp-mobile-shell');
+    return !shell || shell.classList.contains('is-hidden');
+  }
+
+  function setViewportMode(isMobile) {
     var meta = document.querySelector('meta[name="viewport"]');
     if (!meta) {
       meta = document.createElement('meta');
@@ -28,16 +33,33 @@
       if (document.head) document.head.appendChild(meta);
     }
     if (meta) {
-      meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover';
+      if (isMobile) {
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover';
+      } else {
+        // Desktop view: allow user zoom, panning, and responsive desktop scrolling
+        meta.content = 'width=device-width, initial-scale=1.0, user-scalable=yes';
+      }
     }
   }
-  enforceNoZoom();
+  setViewportMode(true);
 
-  document.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
-  document.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
-  document.addEventListener('dblclick', function (e) { e.preventDefault(); }, { passive: false });
+  // Only suppress gestures when Mobile UI is active
+  document.addEventListener('gesturestart', function (e) {
+    if (!isMobileShellHidden()) e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('gesturechange', function (e) {
+    if (!isMobileShellHidden()) e.preventDefault();
+  }, { passive: false });
+
+  document.addEventListener('dblclick', function (e) {
+    if (!isMobileShellHidden()) e.preventDefault();
+  }, { passive: false });
+
   document.addEventListener('touchmove', function (e) {
-    if (e.touches && e.touches.length > 1) e.preventDefault();
+    if (!isMobileShellHidden() && e.touches && e.touches.length > 1) {
+      e.preventDefault();
+    }
   }, { passive: false });
 
   // --- 2. INJECT CSS ---
@@ -217,7 +239,7 @@
       .split('ab67616d000011eb').join('ab67616d0000b273');
   }
 
-  // --- 4. TIMELINE SEEKING ENGINE ---
+  // --- 4. TIMELINE & SCRUBBING ENGINE ---
   var isUserScrubbing = false;
 
   function parseTimeStr(str) {
@@ -241,15 +263,15 @@
   }
 
   function getTotalDurationSeconds() {
+    var rangeInput = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
+    if (rangeInput && rangeInput.max) {
+      var maxMs = parseFloat(rangeInput.max) || 0;
+      if (maxMs > 0) return maxMs / 1000;
+    }
     var durEl = document.querySelector('[data-testid="playback-duration"]');
     if (durEl) {
       var val = parseTimeStr(durEl.innerText || durEl.textContent);
       if (val > 0) return val;
-    }
-    var bar = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
-    if (bar && bar.max) {
-      var maxVal = parseFloat(bar.max);
-      if (maxVal > 0) return maxVal > 1000 ? maxVal / 1000 : maxVal;
     }
     var mediaList = getAllMedia();
     for (var m = 0; m < mediaList.length; m++) {
@@ -272,35 +294,20 @@
       } catch (e) {}
     }
 
-    var pbContainer = document.querySelector('[data-testid="playback-progressbar"]');
-    if (pbContainer) {
-      var subNodes = pbContainer.querySelectorAll('*');
-      var allNodes = [pbContainer];
-      for (var n = 0; n < subNodes.length; n++) allNodes.push(subNodes[n]);
+    var rangeInput = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
+    if (rangeInput) {
+      var max = parseFloat(rangeInput.max) || (totalSec * 1000) || 100;
+      var targetVal = max * clamped;
+      try {
+        var valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        if (valueSetter) valueSetter.call(rangeInput, targetVal);
+        rangeInput.dispatchEvent(new Event('input', { bubbles: true }));
+        rangeInput.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (e) {}
+    }
 
-      for (var i = 0; i < allNodes.length; i++) {
-        var node = allNodes[i];
-        try {
-          var keys = Object.keys(node);
-          for (var k = 0; k < keys.length; k++) {
-            var key = keys[k];
-            if (key.indexOf('__reactProps$') === 0 || key.indexOf('__reactFiber$') === 0) {
-              var props = (node[key] && node[key].memoizedProps) ? node[key].memoizedProps : node[key];
-              if (props) {
-                if (typeof props.onChange === 'function') {
-                  var max = props.max || totalSec * 1000 || 100;
-                  props.onChange({ target: { value: max * clamped }, currentTarget: { value: max * clamped } });
-                }
-                if (typeof props.onSeek === 'function') {
-                  props.onSeek(targetMs);
-                }
-              }
-            }
-          }
-        } catch (err) {}
-      }
-
-      var railNode = pbContainer.querySelector('[data-testid="progress-bar"]') || pbContainer;
+    var railNode = document.querySelector('[data-testid="progress-bar"]') || document.querySelector('[data-testid="playback-progressbar"]');
+    if (railNode) {
       var rect = railNode.getBoundingClientRect();
       if (rect.width > 0) {
         var clientX = rect.left + rect.width * clamped;
@@ -322,8 +329,6 @@
         try {
           railNode.dispatchEvent(new PointerEvent('pointerdown', evOpts));
           railNode.dispatchEvent(new MouseEvent('mousedown', evOpts));
-          window.dispatchEvent(new PointerEvent('pointermove', evOpts));
-          window.dispatchEvent(new MouseEvent('mousemove', evOpts));
           window.dispatchEvent(new PointerEvent('pointerup', evOpts));
           window.dispatchEvent(new MouseEvent('mouseup', evOpts));
         } catch (err) {}
@@ -357,11 +362,6 @@
     var classes = String(nativeShuf.className || '');
     var isSubdued = classes.indexOf('text-subdued') !== -1;
 
-    // Spotify Label States:
-    // "Enable Shuffle for..." = Current: OFF
-    // "Enable Smart Shuffle for..." = Current: REGULAR SHUFFLE (active)
-    // "Disable Smart Shuffle for..." = Current: SMART SHUFFLE (active + badge)
-    // "Disable Shuffle for..." = Current: REGULAR SHUFFLE (active)
     if (label.indexOf('enable smart shuffle') !== -1) {
       return { active: true, smart: false };
     }
@@ -386,14 +386,11 @@
 
   function getNativeLikeButton() {
     return document.querySelector(
+      'button[aria-label*="Liked Songs"], ' +
+      'button[aria-label*="Your Library"], ' +
       '[data-testid="now-playing-bar"] button[data-testid="add-button"], ' +
       'footer button[data-testid="add-button"], ' +
-      'button[data-testid="add-button"], ' +
-      '[data-testid="now-playing-widget"] button[aria-label*="Liked"], ' +
-      '[data-testid="now-playing-widget"] button[aria-label*="Library"], ' +
-      'footer button[aria-label*="Liked Songs"], ' +
-      'footer button[aria-label*="Save to Your Library"], ' +
-      'footer button[aria-label*="Remove from Your Library"]'
+      'button[data-testid="add-button"]'
     );
   }
 
@@ -401,20 +398,21 @@
     var btn = getNativeLikeButton();
     if (!btn) return false;
 
-    var ariaChecked = String(btn.getAttribute('aria-checked') || '').toLowerCase();
-    if (ariaChecked === 'true') return true;
-    if (ariaChecked === 'false') return false;
+    var checked = String(btn.getAttribute('aria-checked') || '').toLowerCase();
+    if (checked === 'true') return true;
+    if (checked === 'false') return false;
 
     var label = String(btn.getAttribute('aria-label') || '').toLowerCase();
-    var title = String(btn.getAttribute('title') || '').toLowerCase();
-    var combined = label + ' ' + title;
-
-    if (combined.indexOf('remove') !== -1 || combined.indexOf('added') !== -1 || combined.indexOf('saved') !== -1) {
+    if (label.indexOf('remove') !== -1 || label.indexOf('added') !== -1 || label.indexOf('saved') !== -1) {
       return true;
     }
-    if (combined.indexOf('save to') !== -1 || combined.indexOf('add to') !== -1) {
+    if (label.indexOf('add to') !== -1 || label.indexOf('save to') !== -1) {
       return false;
     }
+
+    var classes = String(btn.className || '');
+    if (classes.indexOf('bright-accent') !== -1) return true;
+    if (classes.indexOf('text-subdued') !== -1) return false;
 
     var col = window.getComputedStyle(btn).color;
     if (col.indexOf('29, 185, 84') !== -1 || col.indexOf('30, 215, 96') !== -1) {
@@ -428,17 +426,17 @@
     var container = document.getElementById('sp-library-list');
     if (!container) return;
 
-    // Target Spotify's new Encore listRow layout
-    var rows = document.querySelectorAll(
-      '[data-encore-id="listRow"], div[role="row"] [data-encore-id="listRow"], [data-testid="rootlist-item"]'
-    );
+    // Strict query inside Your Library grid to avoid grabbing queue/search tracks
+    var libGrid = document.querySelector('div[role="grid"][aria-label="Your Library"]');
+    var rows = libGrid
+      ? libGrid.querySelectorAll('[data-encore-id="listRow"]')
+      : document.querySelectorAll('nav[aria-label="Your Library"] [data-encore-id="listRow"], [aria-label="Your Library"] [data-encore-id="listRow"]');
 
     var playlistCards = [];
     var seenTitles = {};
 
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
-      // Skip search inputs or search chips
       if (row.querySelector('button[aria-label*="Search"], input')) continue;
 
       var titleEl = row.querySelector('[data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"], [id^="listrow-title-"]');
@@ -454,7 +452,7 @@
       }
 
       if (!title) {
-        var link = row.querySelector('a[href*="/playlist/"], a[href*="/collection/tracks"], a[href*="/album/"]');
+        var link = row.querySelector('a[href*="/playlist/"], a[href*="/collection/tracks"], a[href*="/album/"], a[href*="/artist/"]');
         if (link) title = link.getAttribute('aria-label') || link.innerText.trim();
       }
 
@@ -597,7 +595,6 @@
     var container = document.getElementById('sp-queue-list');
     if (!container) return;
 
-    // Look for queue items in treegrid or tracklist-rows
     var rows = document.querySelectorAll(
       'ul[role="treegrid"] li[role="row"], ul[aria-label="Next up"] li[role="row"], [data-testid="tracklist-row"]'
     );
@@ -616,7 +613,6 @@
     renderTrackRows(rows, container);
   }
 
-  // Set input value cleanly to notify React 18
   function setNativeInputValue(input, val) {
     var valueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
     var prototype = Object.getPrototypeOf(input);
@@ -652,7 +648,6 @@
         setNativeInputValue(input, query);
       }
       setTimeout(function () {
-        // Collect results from the live dropdown list or main search results
         var resultRows = document.querySelectorAll(
           '#search-dropdown [data-encore-id="listRow"], ul[data-encore-id="typeList"] [data-encore-id="listRow"], [data-encore-id="listRow"][role="row"], [data-testid="tracklist-row"]'
         );
@@ -778,7 +773,7 @@
       btnRep.classList.toggle('show-badge', isRepeatOne);
     }
 
-    // Like Sync
+    // Like Sync (Encore Button & Attributes)
     var btnLike = document.getElementById('sp-btn-like');
     var likeSvg = document.getElementById('sp-like-svg');
     if (btnLike && likeSvg) {
@@ -789,41 +784,61 @@
         : '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>';
     }
 
-    // Timeline Sync
+    // Timeline Sync (Direct React Input State Tracker)
     if (!isUserScrubbing) {
-      var posEl = document.querySelector('[data-testid="playback-position"]');
-      var durEl = document.querySelector('[data-testid="playback-duration"]');
+      var rangeInput = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
       var fillEl = document.getElementById('sp-scrub-fill');
       var curText = document.getElementById('sp-time-cur');
       var durText = document.getElementById('sp-time-dur');
 
-      var cSec = 0;
-      var dSec = 0;
+      var cStr = '';
+      var dStr = '';
+      var pct = 0;
 
-      if (posEl && durEl) {
-        cSec = parseTimeStr(posEl.innerText || posEl.textContent);
-        dSec = parseTimeStr(durEl.innerText || durEl.textContent);
+      if (rangeInput) {
+        var vt = rangeInput.getAttribute('aria-valuetext') || '';
+        if (vt.indexOf('/') !== -1) {
+          var parts = vt.split('/');
+          cStr = parts[0].trim();
+          dStr = parts[1].trim();
+        }
+        var curVal = parseFloat(rangeInput.value) || 0;
+        var maxVal = parseFloat(rangeInput.max) || 0;
+        if (maxVal > 0) {
+          pct = Math.min(100, Math.max(0, (curVal / maxVal) * 100));
+        }
       }
 
-      if (!dSec || dSec === 0) {
+      if (!cStr) {
+        var posEl = document.querySelector('[data-testid="playback-position"]');
+        if (posEl) cStr = (posEl.innerText || posEl.textContent || '').trim();
+      }
+      if (!dStr) {
+        var durEl = document.querySelector('[data-testid="playback-duration"]');
+        if (durEl) dStr = (durEl.innerText || durEl.textContent || '').trim();
+      }
+
+      if (!dStr || dStr === '0:00' || (!cStr && !dStr)) {
         var allM = getAllMedia();
         for (var mi = 0; mi < allM.length; mi++) {
           if (allM[mi].duration && allM[mi].duration > 1) {
-            cSec = allM[mi].currentTime || 0;
-            dSec = allM[mi].duration || 0;
+            cStr = formatSeconds(allM[mi].currentTime || 0);
+            dStr = formatSeconds(allM[mi].duration || 0);
+            pct = Math.min(100, Math.max(0, ((allM[mi].currentTime || 0) / allM[mi].duration) * 100));
             break;
           }
         }
       }
 
-      if (dSec > 0) {
-        if (curText) curText.innerText = (posEl && posEl.innerText && posEl.innerText.trim()) ? posEl.innerText.trim() : formatSeconds(cSec);
-        if (durText) durText.innerText = (durEl && durEl.innerText && durEl.innerText.trim()) ? durEl.innerText.trim() : formatSeconds(dSec);
-        if (fillEl) {
-          var pct = Math.min(100, Math.max(0, (cSec / dSec) * 100));
-          fillEl.style.width = pct + '%';
-        }
+      if (pct === 0 && cStr && dStr) {
+        var cSec = parseTimeStr(cStr);
+        var dSec = parseTimeStr(dStr);
+        if (dSec > 0) pct = Math.min(100, Math.max(0, (cSec / dSec) * 100));
       }
+
+      if (cStr && curText) curText.innerText = cStr;
+      if (dStr && durText) durText.innerText = dStr;
+      if (fillEl) fillEl.style.width = pct + '%';
     }
   }
 
@@ -843,6 +858,7 @@
       var shell = document.getElementById('sp-mobile-shell');
       if (!shell) return;
       var hidden = shell.classList.toggle('is-hidden');
+      setViewportMode(!hidden);
       peekBtn.innerHTML = hidden ? eyeIconSvg + '<span>Mobile UI</span>' : eyeIconSvg + '<span>Desktop</span>';
     };
     root.appendChild(peekBtn);
@@ -967,7 +983,7 @@
       setTimeout(syncState, 100);
     };
 
-    // Shuffle Click Handler using native button
+    // Shuffle Click Handler
     document.getElementById('sp-btn-shuf').onclick = function () {
       var nativeShuf = getNativeShuffleButton();
       if (nativeShuf) {
@@ -977,7 +993,7 @@
       }
     };
 
-    // Like Click Handler
+    // Like Click Handler (Encore Button Supported)
     document.getElementById('sp-btn-like').onclick = function () {
       var nativeLike = getNativeLikeButton();
       if (nativeLike) {
