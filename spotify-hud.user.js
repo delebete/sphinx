@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Spotify 16x Auto-FastForward & Pure Mobile Shell
+// @name         Spotify 16x Auto-Skipper & Full Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      6.0
+// @version      7.0
 // @match        https://open.spotify.com/*
 // @run-at       document_idle
 // ==/UserScript==
@@ -9,570 +9,940 @@
 (function() {
   'use strict';
 
-  // --- 1. VIEWPORT OVERRIDE ---
-  function enforceViewport() {
-    let meta = document.querySelector('meta[name="viewport"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.name = 'viewport';
-      document.head.appendChild(meta);
-    }
-    meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+  // Clean up any older mounted instances
+  document.getElementById('sp-mobile-shell')?.remove();
+  document.getElementById('sp-peek-btn')?.remove();
+  document.getElementById('sp-mobile-styles')?.remove();
+
+  // --- 1. VIEWPORT & ZOOM LOCK ---
+  let meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'viewport';
+    document.head.appendChild(meta);
   }
-  enforceViewport();
+  meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
   document.addEventListener('dblclick', (e) => e.preventDefault(), { passive: false });
 
-  // --- 2. CSS WITH HARD ZOOM/SCALE MULTIPLIER ---
-  const shellStyles = `
-    html, body {
-      overflow: hidden !important;
+  // --- 2. 100% VIEWPORT-RELATIVE (vw/vh) CSS (IMMUNE TO DESKTOP SCALING) ---
+  const styleEl = document.createElement('style');
+  styleEl.id = 'sp-mobile-styles';
+  styleEl.textContent = `
+    /* Floating Toggle Button (Always on top so you can see behind the overlay) */
+    #sp-peek-btn {
       position: fixed !important;
-      width: 100% !important;
-      height: 100% !important;
-      margin: 0 !important;
-      padding: 0 !important;
-      touch-action: pan-y !important;
-      -webkit-text-size-adjust: 100% !important;
+      top: 2vh !important;
+      right: 4vw !important;
+      z-index: 2147483647 !important;
+      background: rgba(24, 24, 24, 0.9) !important;
+      color: #ffffff !important;
+      border: 0.4vw solid #1db954 !important;
+      border-radius: 50vw !important;
+      padding: 1.2vh 3.5vw !important;
+      font-size: 3.5vw !important;
+      font-weight: 800 !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 1.5vw !important;
+      box-shadow: 0 1vh 3vh rgba(0,0,0,0.8) !important;
+      cursor: pointer !important;
+      user-select: none !important;
+      -webkit-tap-highlight-color: transparent !important;
+    }
+    #sp-peek-btn:active {
+      transform: scale(0.92) !important;
     }
 
+    /* Main Fullscreen Overlay Shell */
     #sp-mobile-shell {
       position: fixed !important;
-      top: 0 !important;
-      left: 0 !important;
-      right: 0 !important;
-      bottom: 0 !important;
+      inset: 0 !important;
       width: 100vw !important;
       height: 100vh !important;
-      background: #000000 !important;
+      background: linear-gradient(180deg, #1e1e1e 0%, #0a0a0a 45%, #000000 100%) !important;
       color: #ffffff !important;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
-      z-index: 2147483647 !important;
+      z-index: 2147483646 !important;
       display: flex !important;
       flex-direction: column !important;
+      justify-content: space-between !important;
       box-sizing: border-box !important;
       user-select: none !important;
-      -webkit-user-select: none !important;
+      overflow: hidden !important;
+    }
+    #sp-mobile-shell.is-hidden {
+      display: none !important;
     }
 
-    /* Header */
-    .sp-shell-header {
-      padding: 16px 20px 8px 20px !important;
+    /* Top Status Bar */
+    .sp-top-bar {
+      padding: 2.2vh 5vw 1vh 5vw !important;
       display: flex !important;
-      justify-content: space-between !important;
       align-items: center !important;
+      justify-content: space-between !important;
       flex-shrink: 0 !important;
     }
-    .sp-shell-header h1 {
-      font-size: 24px !important;
-      font-weight: 800 !important;
-      margin: 0 !important;
+    .sp-speed-badge {
+      font-size: 3.4vw !important;
+      font-weight: 900 !important;
+      padding: 0.8vh 3.2vw !important;
+      border-radius: 50vw !important;
+      letter-spacing: 0.05vw !important;
     }
-    .sp-pill-ad {
-      font-size: 13px !important;
-      font-weight: 800 !important;
-      padding: 4px 10px !important;
-      border-radius: 12px !important;
+    .sp-speed-badge.mode-16x {
       background: #e91429 !important;
-      color: #fff !important;
-      animation: shell-blink 0.8s infinite alternate !important;
+      color: #ffffff !important;
+      animation: sp-pulse 0.6s infinite alternate !important;
     }
-    .sp-pill-song {
-      font-size: 13px !important;
-      font-weight: 800 !important;
-      padding: 4px 10px !important;
-      border-radius: 12px !important;
+    .sp-speed-badge.mode-1x {
       background: #1db954 !important;
-      color: #000 !important;
+      color: #000000 !important;
     }
-    @keyframes shell-blink {
-      from { opacity: 0.5; }
-      to { opacity: 1; }
+    @keyframes sp-pulse {
+      from { opacity: 0.6; transform: scale(0.97); }
+      to { opacity: 1; transform: scale(1.03); }
     }
 
-    /* Body Container - Centered and Filled */
-    .sp-shell-body {
+    /* Tab Views Container */
+    .sp-view-panel {
+      display: none !important;
       flex: 1 !important;
-      display: flex !important;
       flex-direction: column !important;
-      align-items: center !important;
-      justify-content: center !important;
-      padding: 0 20px !important;
+      width: 100vw !important;
+      overflow-y: auto !important;
+      padding: 1vh 6vw !important;
       box-sizing: border-box !important;
       min-height: 0 !important;
     }
+    .sp-view-panel.active-view {
+      display: flex !important;
+    }
 
-    .sp-hero-card {
+    /* --- VIEW 1: NOW PLAYING --- */
+    #sp-view-player {
+      justify-content: space-evenly !important;
+      align-items: center !important;
+      overflow: hidden !important;
+    }
+    .sp-art-wrap {
+      width: 78vw !important;
+      height: 78vw !important;
+      max-width: 42vh !important;
+      max-height: 42vh !important;
+      border-radius: 4vw !important;
+      overflow: hidden !important;
+      box-shadow: 0 2vh 5vh rgba(0,0,0,0.85) !important;
+      background: #222 !important;
+      flex-shrink: 0 !important;
+    }
+    .sp-art-img {
       width: 100% !important;
-      max-width: 420px !important;
+      height: 100% !important;
+      object-fit: cover !important;
+    }
+
+    /* Track Info + Like Heart Row */
+    .sp-meta-row {
+      width: 88vw !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 4vw !important;
+    }
+    .sp-meta-text {
+      flex: 1 !important;
+      overflow: hidden !important;
+    }
+    .sp-track-title {
+      font-size: 6vw !important;
+      font-weight: 900 !important;
+      color: #ffffff !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      display: block !important;
+    }
+    .sp-track-artist {
+      font-size: 4.2vw !important;
+      font-weight: 600 !important;
+      color: #b3b3b3 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      display: block !important;
+      margin-top: 0.5vh !important;
+    }
+    .sp-like-btn {
+      background: none !important;
+      border: none !important;
+      color: #b3b3b3 !important;
+      padding: 2vw !important;
+      cursor: pointer !important;
+      flex-shrink: 0 !important;
+    }
+    .sp-like-btn svg {
+      width: 8.5vw !important;
+      height: 8.5vw !important;
+      fill: currentColor !important;
+    }
+    .sp-like-btn.is-liked {
+      color: #1db954 !important;
+    }
+
+    /* Timeline Scrubber */
+    .sp-scrubber-wrap {
+      width: 88vw !important;
       display: flex !important;
       flex-direction: column !important;
-      align-items: center !important;
-      box-sizing: border-box !important;
     }
-
-    /* Edge-to-Edge Prominent Artwork */
-    .sp-hero-img {
-      width: 78vw !important;
-      max-width: 380px !important;
-      aspect-ratio: 1 / 1 !important;
-      border-radius: 16px !important;
-      object-fit: cover !important;
-      box-shadow: 0 12px 32px rgba(0,0,0,0.85) !important;
-      margin-bottom: 20px !important;
-      background: #181818 !important;
-    }
-
-    .sp-hero-info {
-      width: 78vw !important;
-      max-width: 380px !important;
-      text-align: left !important;
-      margin-bottom: 8px !important;
-    }
-    .sp-hero-title {
-      font-size: 22px !important;
-      font-weight: 800 !important;
-      line-height: 1.2 !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      display: block !important;
-      color: #ffffff !important;
-    }
-    .sp-hero-artist {
-      font-size: 16px !important;
-      font-weight: 500 !important;
-      color: #b3b3b3 !important;
-      margin-top: 4px !important;
-      white-space: nowrap !important;
-      overflow: hidden !important;
-      text-overflow: ellipsis !important;
-      display: block !important;
-    }
-
-    /* Interactive Scrubber */
-    .sp-scrubber-box {
-      width: 78vw !important;
-      max-width: 380px !important;
-      margin: 12px 0 0 0 !important;
-      padding: 16px 0 !important;
+    .sp-scrub-touch-area {
+      width: 100% !important;
+      padding: 2.2vh 0 !important;
       cursor: pointer !important;
       touch-action: none !important;
     }
-    .sp-scrubber-rail {
+    .sp-scrub-track {
       width: 100% !important;
-      height: 8px !important;
-      background: #333333 !important;
-      border-radius: 4px !important;
+      height: 1.2vh !important;
+      background: #404040 !important;
+      border-radius: 1vh !important;
       position: relative !important;
     }
-    .sp-scrubber-fill {
+    .sp-scrub-fill {
       width: 0% !important;
       height: 100% !important;
       background: #1db954 !important;
-      border-radius: 4px !important;
+      border-radius: 1vh !important;
       position: relative !important;
     }
-    .sp-scrubber-handle {
+    .sp-scrub-thumb {
       position: absolute !important;
-      right: -8px !important;
-      top: -4px !important;
-      width: 16px !important;
-      height: 16px !important;
+      right: -2.5vw !important;
+      top: 50% !important;
+      transform: translateY(-50%) !important;
+      width: 5vw !important;
+      height: 5vw !important;
       background: #ffffff !important;
       border-radius: 50% !important;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.8) !important;
+      box-shadow: 0 0.4vh 1.2vh rgba(0,0,0,0.9) !important;
     }
-    .sp-time-row {
+    .sp-time-labels {
       display: flex !important;
       justify-content: space-between !important;
-      width: 78vw !important;
-      max-width: 380px !important;
-      margin-top: 2px !important;
-      font-size: 13px !important;
-      font-weight: 600 !important;
-      color: #888888 !important;
+      font-size: 3.4vw !important;
+      font-weight: 700 !important;
+      color: #a7a7a7 !important;
+      margin-top: -0.5vh !important;
     }
 
-    /* Bottom Controller & Navigation Dock */
-    .sp-bottom-dock {
-      flex-shrink: 0 !important;
-      background: #000000 !important;
+    /* Primary Transport Controls */
+    .sp-controls-row {
+      width: 92vw !important;
       display: flex !important;
-      flex-direction: column !important;
-      padding-bottom: env(safe-area-inset-bottom, 8px) !important;
-    }
-
-    /* Giant Touch Targets */
-    .sp-dock-controls {
-      display: flex !important;
-      justify-content: space-evenly !important;
       align-items: center !important;
-      padding: 10px 10px 18px 10px !important;
-      width: 100% !important;
-      max-width: 480px !important;
-      margin: 0 auto !important;
+      justify-content: space-between !important;
+      padding: 0.5vh 0 !important;
     }
-    .sp-dock-controls button {
+    .sp-ctrl-btn {
       background: transparent !important;
       border: none !important;
       color: #b3b3b3 !important;
-      cursor: pointer !important;
-      padding: 10px !important;
-      min-width: 48px !important;
-      min-height: 48px !important;
+      width: 14vw !important;
+      height: 14vw !important;
       display: flex !important;
       align-items: center !important;
       justify-content: center !important;
-      border-radius: 50% !important;
       position: relative !important;
-      transition: transform 0.1s ease, color 0.15s ease !important;
+      cursor: pointer !important;
       -webkit-tap-highlight-color: transparent !important;
     }
-    .sp-dock-controls button:active {
-      transform: scale(0.86) !important;
+    .sp-ctrl-btn:active {
+      transform: scale(0.85) !important;
     }
-    .sp-dock-controls button svg {
-      width: 28px !important;
-      height: 28px !important;
+    .sp-ctrl-btn svg {
+      width: 8vw !important;
+      height: 8vw !important;
       fill: currentColor !important;
     }
-
-    /* Shuffle & Repeat Active Green State */
-    .sp-dock-controls button.is-active {
+    /* Active green indicator for Shuffle & Repeat */
+    .sp-ctrl-btn.state-active {
       color: #1db954 !important;
     }
-    .sp-dock-controls button.is-active svg {
-      fill: #1db954 !important;
-      filter: drop-shadow(0 0 6px rgba(29, 185, 84, 0.8)) !important;
-    }
-    .sp-dock-controls button.is-active::after {
+    .sp-ctrl-btn.state-active::after {
       content: '' !important;
       position: absolute !important;
-      bottom: 4px !important;
-      width: 5px !important;
-      height: 5px !important;
+      bottom: 0.8vw !important;
+      width: 1.6vw !important;
+      height: 1.6vw !important;
       background: #1db954 !important;
       border-radius: 50% !important;
     }
-
-    /* Large Play / Pause Circle */
-    .sp-play-circle {
+    /* Repeat-1 Badge */
+    .sp-repeat-one-badge {
+      position: absolute !important;
+      top: 1.2vw !important;
+      right: 1.2vw !important;
       background: #1db954 !important;
       color: #000000 !important;
-      width: 72px !important;
-      height: 72px !important;
+      font-size: 2.6vw !important;
+      font-weight: 900 !important;
+      width: 4vw !important;
+      height: 4vw !important;
       border-radius: 50% !important;
-      box-shadow: 0 4px 18px rgba(29, 185, 84, 0.45) !important;
+      display: none !important;
+      align-items: center !important;
+      justify-content: center !important;
     }
-    .sp-play-circle:active {
-      transform: scale(0.92) !important;
+    .sp-ctrl-btn.state-repeat-one .sp-repeat-one-badge {
+      display: flex !important;
     }
-    .sp-play-circle svg {
-      width: 32px !important;
-      height: 32px !important;
+
+    /* Giant Play/Pause Circle */
+    .sp-play-main {
+      background: #ffffff !important;
+      color: #000000 !important;
+      width: 20vw !important;
+      height: 20vw !important;
+      border-radius: 50% !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border: none !important;
+      box-shadow: 0 1vh 3vh rgba(0,0,0,0.6) !important;
+    }
+    .sp-play-main:active {
+      transform: scale(0.9) !important;
+    }
+    .sp-play-main svg {
+      width: 9.5vw !important;
+      height: 9.5vw !important;
       fill: #000000 !important;
     }
 
-    /* Bottom Tabs */
-    .sp-dock-tabs {
-      height: 58px !important;
-      background: #000000 !important;
+    /* --- VIEW 2 & 3: CUSTOM LIBRARY & QUEUE LISTS --- */
+    .sp-section-header {
+      font-size: 6.5vw !important;
+      font-weight: 900 !important;
+      margin: 1vh 0 2vh 0 !important;
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+    }
+    .sp-refresh-btn {
+      background: #282828 !important;
+      color: #fff !important;
+      border: none !important;
+      padding: 1vh 3.5vw !important;
+      border-radius: 50vw !important;
+      font-size: 3.4vw !important;
+      font-weight: 700 !important;
+    }
+    .sp-item-list {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 1.4vh !important;
+      padding-bottom: 4vh !important;
+    }
+    .sp-list-card {
+      background: #181818 !important;
+      border-radius: 2.5vw !important;
+      padding: 1.5vh 3.5vw !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 3.5vw !important;
+      cursor: pointer !important;
+    }
+    .sp-list-card:active {
+      background: #282828 !important;
+    }
+    .sp-list-img {
+      width: 13vw !important;
+      height: 13vw !important;
+      border-radius: 1.5vw !important;
+      object-fit: cover !important;
+      background: #333 !important;
+      flex-shrink: 0 !important;
+    }
+    .sp-list-info {
+      flex: 1 !important;
+      overflow: hidden !important;
+    }
+    .sp-list-title {
+      font-size: 4.2vw !important;
+      font-weight: 700 !important;
+      color: #fff !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      display: block !important;
+    }
+    .sp-list-sub {
+      font-size: 3.3vw !important;
+      color: #a7a7a7 !important;
+      white-space: nowrap !important;
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      display: block !important;
+      margin-top: 0.3vh !important;
+    }
+
+    /* Bottom Navigation Bar */
+    .sp-bottom-nav {
+      height: 9.5vh !important;
+      background: #080808 !important;
+      border-top: 0.2vh solid #222 !important;
       display: flex !important;
       justify-content: space-around !important;
       align-items: center !important;
-      border-top: 1px solid #1a1a1a !important;
+      flex-shrink: 0 !important;
+      padding-bottom: env(safe-area-inset-bottom, 0px) !important;
     }
-    .sp-tab {
+    .sp-nav-btn {
+      flex: 1 !important;
+      height: 100% !important;
+      background: none !important;
+      border: none !important;
+      color: #777777 !important;
       display: flex !important;
       flex-direction: column !important;
       align-items: center !important;
       justify-content: center !important;
-      background: none !important;
-      border: none !important;
-      color: #888888 !important;
-      font-size: 11px !important;
+      gap: 0.6vh !important;
+      font-size: 3.2vw !important;
       font-weight: 700 !important;
-      gap: 3px !important;
       cursor: pointer !important;
-      flex: 1 !important;
-      height: 100% !important;
-      -webkit-tap-highlight-color: transparent !important;
     }
-    .sp-tab svg {
-      width: 22px !important;
-      height: 22px !important;
+    .sp-nav-btn svg {
+      width: 6.5vw !important;
+      height: 6.5vw !important;
       fill: currentColor !important;
     }
-    .sp-tab.active {
-      color: #ffffff !important;
+    .sp-nav-btn.active-tab {
+      color: #1db954 !important;
     }
   `;
+  document.head.appendChild(styleEl);
 
-  const sheet = document.createElement('style');
-  sheet.textContent = shellStyles;
-  document.head.appendChild(sheet);
+  // --- 3. CORE MEDIA & 16x DEFAULT AD-SKIPPER ENGINE ---
+  // Intercepts all created audio/video tags on the page so we never grab the wrong one
+  const trackedMedia = new Set();
+  const origCreate = document.createElement;
+  document.createElement = function(tag) {
+    const el = origCreate.apply(this, arguments);
+    if (tag && (tag.toLowerCase() === 'audio' || tag.toLowerCase() === 'video')) {
+      el.playbackRate = 16.0;
+      el.defaultPlaybackRate = 16.0;
+      trackedMedia.add(el);
+    }
+    return el;
+  };
 
-  // --- 3. AUDIO DISCOVERY & SEEK DISPATCHER ---
-  function getMedia() {
-    return document.querySelector('audio, video');
+  function getAllMediaElements() {
+    document.querySelectorAll('audio, video').forEach(el => trackedMedia.add(el));
+    return Array.from(trackedMedia);
   }
 
-  function isAd() {
+  // Positive Song Verification: Default is 16x unless a real song is verified
+  function isVerifiedSongPlaying() {
+    // 1. Check for any ad indicators in the DOM
+    const adUi = document.querySelector('[data-testid="ad-info"], [aria-label*="Advertisement"], [data-testid="context-item-info-ad-subtitle"]');
+    if (adUi) return false;
+
+    // 2. Check MediaSession metadata
     if (navigator.mediaSession?.metadata) {
       const title = (navigator.mediaSession.metadata.title || '').toLowerCase();
       const artist = (navigator.mediaSession.metadata.artist || '').toLowerCase();
-      if (title.includes('advertisement') || artist.includes('spotify')) return true;
+      if (!title || title.includes('advertisement') || title === 'spotify' || artist === 'spotify') {
+        return false;
+      }
     }
-    const hasTrackLink = document.querySelector('[data-testid="context-item-link"], [data-testid="nowplaying-track-link"]');
-    return !hasTrackLink;
+
+    // 3. Verify that the now-playing widget has a genuine track/album href link
+    const trackLink = document.querySelector('[data-testid="context-item-link"], [data-testid="nowplaying-track-link"]');
+    if (!trackLink) return false;
+    const href = trackLink.getAttribute('href') || '';
+    if (!href.includes('/track/') && !href.includes('/album/') && !href.includes('/playlist/') && !href.includes('/episode/')) {
+      return false;
+    }
+
+    return true;
   }
 
-  // Seeks by driving Spotify's native desktop progressbar
-  function seekNativeSpotify(percentage) {
-    const desktopSlider = document.querySelector('[data-testid="playback-progressbar"]');
-    if (desktopSlider) {
-      const rect = desktopSlider.getBoundingClientRect();
-      const clientX = rect.left + (rect.width * percentage);
-      const clientY = rect.top + (rect.height / 2);
+  // --- 4. TIMELINE SEEKING ENGINE ---
+  let isUserScrubbing = false;
 
-      const pointerDown = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, clientX, clientY, pointerId: 1 });
-      const pointerUp = new PointerEvent('pointerup', { bubbles: true, cancelable: true, clientX, clientY, pointerId: 1 });
+  function parseTimeStr(str) {
+    if (!str) return 0;
+    const parts = str.trim().split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return 0;
+  }
 
-      desktopSlider.dispatchEvent(pointerDown);
-      desktopSlider.dispatchEvent(pointerUp);
+  function formatSeconds(sec) {
+    if (!sec || isNaN(sec) || sec < 0) return '0:00';
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  }
+
+  function seekToRatio(ratio) {
+    const clamped = Math.max(0, Math.min(1, ratio));
+
+    // Method A: Simulate full mouse + pointer drag sequence on Spotify's desktop progress bar
+    const bar = document.querySelector('[data-testid="playback-progressbar"]');
+    if (bar) {
+      const target = bar.querySelector('.bg-line, [data-testid="progress-bar"], div') || bar;
+      const rect = target.getBoundingClientRect();
+      if (rect.width > 0) {
+        const clientX = rect.left + rect.width * clamped;
+        const clientY = rect.top + rect.height / 2;
+        const opts = { bubbles: true, cancelable: true, view: window, clientX, clientY, button: 0, buttons: 1 };
+
+        target.dispatchEvent(new PointerEvent('pointerdown', opts));
+        target.dispatchEvent(new MouseEvent('mousedown', opts));
+        document.dispatchEvent(new PointerEvent('pointermove', opts));
+        document.dispatchEvent(new MouseEvent('mousemove', opts));
+        target.dispatchEvent(new PointerEvent('pointerup', opts));
+        target.dispatchEvent(new MouseEvent('mouseup', opts));
+        target.dispatchEvent(new MouseEvent('click', opts));
+      }
+
+      // Method B: Range input native value setter
+      const rangeInput = bar.querySelector('input[type="range"]');
+      if (rangeInput) {
+        const min = parseFloat(rangeInput.min || 0);
+        const max = parseFloat(rangeInput.max || 100);
+        const val = min + (max - min) * clamped;
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (setter) {
+          setter.call(rangeInput, val);
+          rangeInput.dispatchEvent(new Event('input', { bubbles: true }));
+          rangeInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }
+    }
+
+    // Method C: Direct media element seek
+    getAllMediaElements().forEach(media => {
+      if (media.duration && media.duration > 5) {
+        try { media.currentTime = media.duration * clamped; } catch (e) {}
+      }
+    });
+  }
+
+  // --- 5. SCRAPERS FOR LIBRARY & QUEUE ---
+  function refreshLibraryList() {
+    const container = document.getElementById('sp-library-list');
+    if (!container) return;
+
+    // Scrape playlists/artists from Spotify's left library sidebar
+    const items = document.querySelectorAll('[data-testid="rootlist-item"], [role="listitem"], [data-encore-id="listRow"]');
+    if (!items.length) {
+      container.innerHTML = `<div style="color:#888;font-size:4vw;text-align:center;padding:4vh;">No library items found yet. Make sure you are logged in!</div>`;
       return;
     }
 
-    // Direct audio tag fallback
-    const media = getMedia();
-    if (media && media.duration && media.duration > 10) {
-      media.currentTime = media.duration * percentage;
+    container.innerHTML = '';
+    items.forEach((item, idx) => {
+      const titleEl = item.querySelector('[data-encore-id="text"], p, span');
+      const imgEl = item.querySelector('img');
+      const title = titleEl ? titleEl.innerText.split('\n')[0] : `Playlist #${idx + 1}`;
+      const sub = item.innerText.split('\n')[1] || 'Library Item';
+      const imgSrc = imgEl ? imgEl.src : '';
+
+      const card = document.createElement('div');
+      card.className = 'sp-list-card';
+      card.innerHTML = `
+        <img class="sp-list-img" src="${imgSrc}" alt="" />
+        <div class="sp-list-info">
+          <span class="sp-list-title">${title}</span>
+          <span class="sp-list-sub">${sub}</span>
+        </div>
+      `;
+      card.onclick = () => {
+        const clickTarget = item.querySelector('[role="button"], a') || item;
+        clickTarget.click();
+        // Switch back to Player view or let user pick song
+        const playBtn = item.querySelector('[data-testid="play-button"]');
+        if (playBtn) playBtn.click();
+      };
+      container.appendChild(card);
+    });
+  }
+
+  function refreshQueueList() {
+    const container = document.getElementById('sp-queue-list');
+    if (!container) return;
+
+    // Ensure Spotify's desktop Queue drawer or visible track rows are scraped
+    const rows = document.querySelectorAll('[data-testid="tracklist-row"]');
+    if (!rows.length) {
+      // Try clicking Spotify's Queue button to open the queue panel in the background
+      const qBtn = document.querySelector('[data-testid="control-button-queue"]');
+      if (qBtn) qBtn.click();
+      setTimeout(() => {
+        const retryRows = document.querySelectorAll('[data-testid="tracklist-row"]');
+        renderTrackRows(retryRows, container);
+      }, 400);
+      return;
+    }
+    renderTrackRows(rows, container);
+  }
+
+  function renderTrackRows(rows, container) {
+    if (!rows.length) {
+      container.innerHTML = `<div style="color:#888;font-size:4vw;text-align:center;padding:4vh;">No tracks visible in current queue/playlist view.</div>`;
+      return;
+    }
+    container.innerHTML = '';
+    rows.forEach((row, i) => {
+      const titleEl = row.querySelector('[data-testid="internal-track-link"] div, [dir="auto"]');
+      const artistEl = row.querySelector('span a, [data-encore-id="text"]');
+      const imgEl = row.querySelector('img');
+      const title = titleEl ? titleEl.innerText : `Track ${i + 1}`;
+      const artist = artistEl ? artistEl.innerText : '';
+      const img = imgEl ? imgEl.src : '';
+
+      const card = document.createElement('div');
+      card.className = 'sp-list-card';
+      card.innerHTML = `
+        <img class="sp-list-img" src="${img}" alt="" />
+        <div class="sp-list-info">
+          <span class="sp-list-title">${title}</span>
+          <span class="sp-list-sub">${artist}</span>
+        </div>
+      `;
+      card.onclick = () => {
+        const playBtn = row.querySelector('[data-testid="play-button"]') || row;
+        playBtn.click();
+        // Also dispatch double-click on the row (Spotify desktop plays row on dblclick)
+        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+        switchTab('player');
+      };
+      container.appendChild(card);
+    });
+  }
+
+  function switchTab(tabName) {
+    document.querySelectorAll('.sp-view-panel').forEach(p => p.classList.remove('active-view'));
+    document.querySelectorAll('.sp-nav-btn').forEach(b => b.classList.remove('active-tab'));
+
+    if (tabName === 'player') {
+      document.getElementById('sp-view-player')?.classList.add('active-view');
+      document.getElementById('sp-tab-player')?.classList.add('active-tab');
+    } else if (tabName === 'library') {
+      document.getElementById('sp-view-library')?.classList.add('active-view');
+      document.getElementById('sp-tab-library')?.classList.add('active-tab');
+      refreshLibraryList();
+    } else if (tabName === 'queue') {
+      document.getElementById('sp-view-queue')?.classList.add('active-view');
+      document.getElementById('sp-tab-queue')?.classList.add('active-tab');
+      refreshQueueList();
     }
   }
 
-  // --- 4. REAL TIME & STATE SYNC ---
-  let isDragging = false;
+  // --- 6. STATE SYNCHRONIZATION LOOP ---
+  function syncUI() {
+    // 1. Default 16x Speed Logic
+    const songVerified = isVerifiedSongPlaying();
+    const targetSpeed = songVerified ? 1.0 : 16.0;
 
-  function syncState() {
-    // 16x Fast-Forward check
-    const media = getMedia();
-    if (media) {
-      const ad = isAd();
-      const targetSpeed = ad ? 16.0 : 1.0;
+    getAllMediaElements().forEach(media => {
       if (media.playbackRate !== targetSpeed) {
         media.playbackRate = targetSpeed;
         media.defaultPlaybackRate = targetSpeed;
       }
-    }
+      // Mute ads while fast-forwarding at 16x so there's no high-pitched squeak
+      if (!songVerified && !media.muted) {
+        media.muted = true;
+      } else if (songVerified && media.muted) {
+        media.muted = false;
+      }
+    });
 
-    const badge = document.getElementById('sp-shell-badge');
-    const title = document.getElementById('sp-shell-title');
-    const artist = document.getElementById('sp-shell-artist');
-    const art = document.getElementById('sp-shell-art');
-    const progress = document.getElementById('sp-shell-fill');
-    const timeCurr = document.getElementById('sp-time-curr');
-    const timeDur = document.getElementById('sp-time-dur');
-    const playSvg = document.getElementById('sp-shell-playsvg');
-    const btnShuf = document.getElementById('sp-btn-shuf');
-    const btnRep = document.getElementById('sp-btn-rep');
-
+    const badge = document.getElementById('sp-badge');
     if (badge) {
-      const ad = isAd();
-      badge.innerText = ad ? '16x AD' : '1x SONG';
-      badge.className = ad ? 'sp-pill-ad' : 'sp-pill-song';
+      badge.innerText = songVerified ? '1x SONG DETECTED' : '16x FAST-FORWARD (DEFAULT)';
+      badge.className = songVerified ? 'sp-speed-badge mode-1x' : 'sp-speed-badge mode-16x';
     }
 
-    // Track metadata
+    // 2. Metadata (Title, Artist, Artwork)
+    const titleEl = document.getElementById('sp-title');
+    const artistEl = document.getElementById('sp-artist');
+    const artEl = document.getElementById('sp-art');
+
+    const domTitle = document.querySelector('[data-testid="context-item-link"]')?.innerText;
+    const domArtist = document.querySelector('[data-testid="context-item-info-subtitles"]')?.innerText;
+    const domArt = document.querySelector('[data-testid="cover-art-image"]')?.src;
+
     if (navigator.mediaSession?.metadata) {
       const meta = navigator.mediaSession.metadata;
-      if (title && meta.title) title.innerText = meta.title;
-      if (artist && meta.artist) artist.innerText = meta.artist;
-      if (art && meta.artwork?.length > 0) {
-        art.src = meta.artwork[meta.artwork.length - 1].src;
+      if (titleEl) titleEl.innerText = meta.title || domTitle || 'Not Playing';
+      if (artistEl) artistEl.innerText = meta.artist || domArtist || 'Spotify';
+      if (artEl && meta.artwork?.length) {
+        artEl.src = meta.artwork[meta.artwork.length - 1].src;
+      } else if (artEl && domArt) {
+        artEl.src = domArt;
       }
+    } else {
+      if (titleEl && domTitle) titleEl.innerText = domTitle;
+      if (artistEl && domArtist) artistEl.innerText = domArtist;
+      if (artEl && domArt) artEl.src = domArt;
     }
 
-    // Sync play/pause icon
-    const playBtn = document.querySelector('[data-testid="control-button-playpause"]');
-    if (playBtn && playSvg) {
-      const isPlaying = playBtn.getAttribute('aria-label')?.toLowerCase().includes('pause') || (media && !media.paused);
-      if (isPlaying) {
-        playSvg.innerHTML = '<rect x="10" y="8" width="4" height="16"></rect><rect x="18" y="8" width="4" height="16"></rect>';
-      } else {
-        playSvg.innerHTML = '<polygon points="11 8 23 16 11 24 11 8"></polygon>';
-      }
+    // 3. Play/Pause Button State
+    const nativePlay = document.querySelector('[data-testid="control-button-playpause"]');
+    const playSvg = document.getElementById('sp-play-svg');
+    if (nativePlay && playSvg) {
+      const label = (nativePlay.getAttribute('aria-label') || '').toLowerCase();
+      const isPlaying = label.includes('pause');
+      playSvg.innerHTML = isPlaying
+        ? '<rect x="6" y="4" width="4.5" height="16" rx="1"></rect><rect x="13.5" y="4" width="4.5" height="16" rx="1"></rect>'
+        : '<polygon points="6 4 20 12 6 20 6 4"></polygon>';
     }
 
-    // Sync active colors on Shuffle & Repeat
+    // 4. Shuffle Indicator (Off vs Active Green)
     const nativeShuf = document.querySelector('[data-testid="control-button-shuffle"]');
+    const btnShuf = document.getElementById('sp-btn-shuf');
     if (nativeShuf && btnShuf) {
-      const active = nativeShuf.getAttribute('aria-checked') === 'true' || 
-                     (nativeShuf.getAttribute('aria-label') || '').toLowerCase().includes('disable') ||
-                     getComputedStyle(nativeShuf).color.includes('29, 185, 84');
-      btnShuf.classList.toggle('is-active', !!active);
+      const ariaChecked = nativeShuf.getAttribute('aria-checked') === 'true';
+      const ariaLabel = (nativeShuf.getAttribute('aria-label') || '').toLowerCase();
+      const isShufOn = ariaChecked || ariaLabel.includes('disable shuffle');
+      btnShuf.classList.toggle('state-active', isShufOn);
     }
 
+    // 5. Repeat 3-State Indicator (Off -> Repeat All [Green] -> Repeat One [Green + '1'])
     const nativeRep = document.querySelector('[data-testid="control-button-repeat"]');
+    const btnRep = document.getElementById('sp-btn-rep');
     if (nativeRep && btnRep) {
-      const repVal = nativeRep.getAttribute('aria-checked');
-      const active = repVal === 'true' || repVal === 'mixed' ||
-                     (nativeRep.getAttribute('aria-label') || '').toLowerCase().includes('disable') ||
-                     getComputedStyle(nativeRep).color.includes('29, 185, 84');
-      btnRep.classList.toggle('is-active', !!active);
+      const ariaChecked = nativeRep.getAttribute('aria-checked');
+      const ariaLabel = (nativeRep.getAttribute('aria-label') || '').toLowerCase();
+
+      // State 3: Repeat One (aria-checked="mixed" or label says "disable repeat")
+      const isRepeatOne = ariaChecked === 'mixed' || ariaLabel.includes('disable repeat');
+      // State 2: Repeat Context/All (aria-checked="true" or label says "enable repeat one")
+      const isRepeatAll = !isRepeatOne && (ariaChecked === 'true' || ariaLabel.includes('repeat one'));
+
+      btnRep.classList.toggle('state-active', isRepeatAll || isRepeatOne);
+      btnRep.classList.toggle('state-repeat-one', isRepeatOne);
     }
 
-    // Read real duration from Spotify's desktop playback bar labels
-    if (!isDragging) {
-      const curLabel = document.querySelector('[data-testid="playback-position"]');
-      const durLabel = document.querySelector('[data-testid="playback-duration"]');
+    // 6. Like / Heart Button State
+    const nativeLike = document.querySelector('footer [data-testid="add-button"], [data-testid="now-playing-bar"] [data-testid="add-button"]');
+    const btnLike = document.getElementById('sp-btn-like');
+    if (nativeLike && btnLike) {
+      const isSaved = nativeLike.getAttribute('aria-checked') === 'true' ||
+                      (nativeLike.getAttribute('aria-label') || '').toLowerCase().includes('remove') ||
+                      (nativeLike.getAttribute('aria-label') || '').toLowerCase().includes('saved');
+      btnLike.classList.toggle('is-liked', isSaved);
+    }
 
-      if (curLabel && durLabel) {
-        if (timeCurr) timeCurr.innerText = curLabel.innerText;
-        if (timeDur) timeDur.innerText = durLabel.innerText;
+    // 7. Timeline Position & Duration
+    if (!isUserScrubbing) {
+      const posEl = document.querySelector('[data-testid="playback-position"]');
+      const durEl = document.querySelector('[data-testid="playback-duration"]');
+      const fillEl = document.getElementById('sp-scrub-fill');
+      const curText = document.getElementById('sp-time-cur');
+      const durText = document.getElementById('sp-time-dur');
 
-        // Calculate percentage from labels (e.g., "1:15" vs "3:40")
-        const parseSec = (str) => {
-          const parts = str.split(':').map(Number);
-          return parts.length === 2 ? parts[0] * 60 + parts[1] : 0;
-        };
-        const cSec = parseSec(curLabel.innerText);
-        const dSec = parseSec(durLabel.innerText);
-        if (dSec > 0 && progress) {
-          progress.style.width = `${(cSec / dSec) * 100}%`;
+      if (posEl && durEl) {
+        const cSec = parseTimeStr(posEl.innerText);
+        const dSec = parseTimeStr(durEl.innerText);
+        if (curText) curText.innerText = posEl.innerText;
+        if (durText) durText.innerText = durEl.innerText;
+        if (fillEl && dSec > 0) {
+          fillEl.style.width = `${Math.min(100, (cSec / dSec) * 100)}%`;
         }
-      } else if (media && media.duration && media.duration > 10) {
-        if (progress) progress.style.width = `${(media.currentTime / media.duration) * 100}%`;
       }
     }
   }
 
-  setInterval(syncState, 200);
+  setInterval(syncUI, 150);
 
-  function clickDesktop(testId) {
-    const el = document.querySelector(`[data-testid="${testId}"]`);
+  // --- 7. BUILD & MOUNT UI ---
+  function clickNative(selector) {
+    const el = document.querySelector(selector);
     if (el) {
       el.click();
-      setTimeout(syncState, 50);
+      setTimeout(syncUI, 50);
     }
   }
 
-  // --- 5. MOUNT SHELL ---
-  function mountShell() {
+  function mountApp() {
     if (document.getElementById('sp-mobile-shell')) return;
-
     const root = document.body || document.documentElement;
     if (!root) return;
 
+    // 1. Floating Peek Button (Toggle Overlay On/Off)
+    const peekBtn = document.createElement('button');
+    peekBtn.id = 'sp-peek-btn';
+    peekBtn.innerHTML = '👁️ Hide UI';
+    peekBtn.onclick = () => {
+      const shell = document.getElementById('sp-mobile-shell');
+      if (!shell) return;
+      const hidden = shell.classList.toggle('is-hidden');
+      peekBtn.innerHTML = hidden ? '📱 Show UI' : '👁️ Hide UI';
+    };
+    root.appendChild(peekBtn);
+
+    // 2. Main Mobile Shell
     const shell = document.createElement('div');
     shell.id = 'sp-mobile-shell';
     shell.innerHTML = `
-      <div class="sp-shell-header">
-        <h1>Now Playing</h1>
-        <span id="sp-shell-badge" class="sp-pill-song">1x SONG</span>
+      <!-- Top Bar -->
+      <div class="sp-top-bar">
+        <span id="sp-badge" class="sp-speed-badge mode-16x">16x DEFAULT</span>
       </div>
 
-      <div class="sp-shell-body">
-        <div class="sp-hero-card">
-          <img id="sp-shell-art" class="sp-hero-img" src="" alt="Artwork" />
-          <div class="sp-hero-info">
-            <span id="sp-shell-title" class="sp-hero-title">Connecting...</span>
-            <span id="sp-shell-artist" class="sp-hero-artist">Spotify</span>
-          </div>
+      <!-- TAB 1: NOW PLAYING -->
+      <div id="sp-view-player" class="sp-view-panel active-view">
+        <div class="sp-art-wrap">
+          <img id="sp-art" class="sp-art-img" src="" alt="" />
+        </div>
 
-          <!-- Timeline -->
-          <div class="sp-scrubber-box" id="sp-scrub-box">
-            <div class="sp-scrubber-rail" id="sp-rail">
-              <div class="sp-scrubber-fill" id="sp-shell-fill">
-                <div class="sp-scrubber-handle"></div>
+        <div class="sp-meta-row">
+          <div class="sp-meta-text">
+            <span id="sp-title" class="sp-track-title">Waiting for song...</span>
+            <span id="sp-artist" class="sp-track-artist">Spotify</span>
+          </div>
+          <button id="sp-btn-like" class="sp-like-btn" title="Like Song">
+            <svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+          </button>
+        </div>
+
+        <!-- Draggable Timeline -->
+        <div class="sp-scrubber-wrap">
+          <div id="sp-scrub-zone" class="sp-scrub-touch-area">
+            <div id="sp-scrub-rail" class="sp-scrub-track">
+              <div id="sp-scrub-fill" class="sp-scrub-fill">
+                <div class="sp-scrub-thumb"></div>
               </div>
             </div>
           </div>
-          <div class="sp-time-row">
-            <span id="sp-time-curr">0:00</span>
+          <div class="sp-time-labels">
+            <span id="sp-time-cur">0:00</span>
             <span id="sp-time-dur">0:00</span>
           </div>
         </div>
-      </div>
 
-      <div class="sp-bottom-dock">
-        <div class="sp-dock-controls">
-          <button id="sp-btn-shuf" title="Shuffle">
+        <!-- Transport Controls -->
+        <div class="sp-controls-row">
+          <button id="sp-btn-shuf" class="sp-ctrl-btn" title="Shuffle">
             <svg viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
           </button>
-          <button id="sp-btn-prev" title="Previous">
-            <svg viewBox="0 0 24 24"><path d="M6 6h3v12H6zm4 6l10 7.5V4.5z"/></svg>
+          <button id="sp-btn-prev" class="sp-ctrl-btn" title="Previous">
+            <svg viewBox="0 0 24 24"><path d="M6 6h3v12H6zm4 6l10 7V5z"/></svg>
           </button>
-          <button id="sp-btn-play" class="sp-play-circle" title="Play/Pause">
-            <svg id="sp-shell-playsvg" viewBox="0 0 32 32"><polygon points="11 8 23 16 11 24 11 8"></polygon></svg>
+          <button id="sp-btn-play" class="sp-play-main" title="Play/Pause">
+            <svg id="sp-play-svg" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
           </button>
-          <button id="sp-btn-next" title="Next">
-            <svg viewBox="0 0 24 24"><path d="M4 19.5l10-7.5-10-7.5v15zM15 6h3v12h-3z"/></svg>
+          <button id="sp-btn-next" class="sp-ctrl-btn" title="Next">
+            <svg viewBox="0 0 24 24"><path d="M4 19l10-7L4 5v14zm11-14h3v14h-3z"/></svg>
           </button>
-          <button id="sp-btn-rep" title="Repeat">
+          <button id="sp-btn-rep" class="sp-ctrl-btn" title="Repeat">
+            <span class="sp-repeat-one-badge">1</span>
             <svg viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
           </button>
         </div>
-
-        <nav class="sp-dock-tabs">
-          <button class="sp-tab active" onclick="window.location.href='/'">
-            <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
-            <span>Home</span>
-          </button>
-          <button class="sp-tab" onclick="window.location.href='/search'">
-            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
-            <span>Search</span>
-          </button>
-          <button class="sp-tab" onclick="window.location.href='/collection/playlists'">
-            <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
-            <span>Your Library</span>
-          </button>
-        </nav>
       </div>
+
+      <!-- TAB 2: CUSTOM LIBRARY -->
+      <div id="sp-view-library" class="sp-view-panel">
+        <div class="sp-section-header">
+          <span>Your Library</span>
+          <button id="sp-refresh-lib" class="sp-refresh-btn">↻ Refresh</button>
+        </div>
+        <div id="sp-library-list" class="sp-item-list"></div>
+      </div>
+
+      <!-- TAB 3: CUSTOM QUEUE / TRACKS -->
+      <div id="sp-view-queue" class="sp-view-panel">
+        <div class="sp-section-header">
+          <span>Queue & Tracks</span>
+          <button id="sp-refresh-q" class="sp-refresh-btn">↻ Refresh</button>
+        </div>
+        <div id="sp-queue-list" class="sp-item-list"></div>
+      </div>
+
+      <!-- Bottom Tab Navigation -->
+      <nav class="sp-bottom-nav">
+        <button id="sp-tab-player" class="sp-nav-btn active-tab">
+          <svg viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+          <span>Player</span>
+        </button>
+        <button id="sp-tab-library" class="sp-nav-btn">
+          <svg viewBox="0 0 24 24"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H8V4h12v12z"/></svg>
+          <span>Library</span>
+        </button>
+        <button id="sp-tab-queue" class="sp-nav-btn">
+          <svg viewBox="0 0 24 24"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>
+          <span>Queue</span>
+        </button>
+      </nav>
     `;
 
     root.appendChild(shell);
 
-    // Event attachments
-    document.getElementById('sp-btn-play')?.addEventListener('click', () => clickDesktop('control-button-playpause'));
-    document.getElementById('sp-btn-next')?.addEventListener('click', () => clickDesktop('control-button-skip-forward'));
-    document.getElementById('sp-btn-prev')?.addEventListener('click', () => clickDesktop('control-button-skip-back'));
-    document.getElementById('sp-btn-shuf')?.addEventListener('click', () => clickDesktop('control-button-shuffle'));
-    document.getElementById('sp-btn-rep')?.addEventListener('click', () => clickDesktop('control-button-repeat'));
+    // Wire Player Controls
+    document.getElementById('sp-btn-play').onclick = () => clickNative('[data-testid="control-button-playpause"]');
+    document.getElementById('sp-btn-next').onclick = () => clickNative('[data-testid="control-button-skip-forward"]');
+    document.getElementById('sp-btn-prev').onclick = () => clickNative('[data-testid="control-button-skip-back"]');
+    document.getElementById('sp-btn-shuf').onclick = () => clickNative('[data-testid="control-button-shuffle"]');
+    document.getElementById('sp-btn-rep').onclick = () => clickNative('[data-testid="control-button-repeat"]');
+    document.getElementById('sp-btn-like').onclick = () => clickNative('footer [data-testid="add-button"], [data-testid="now-playing-bar"] [data-testid="add-button"]');
 
-    // Drag-to-Seek Handlers
-    const scrubBox = document.getElementById('sp-scrub-box');
-    const rail = document.getElementById('sp-rail');
-    const fill = document.getElementById('sp-shell-fill');
+    // Wire Tabs
+    document.getElementById('sp-tab-player').onclick = () => switchTab('player');
+    document.getElementById('sp-tab-library').onclick = () => switchTab('library');
+    document.getElementById('sp-tab-queue').onclick = () => switchTab('queue');
+    document.getElementById('sp-refresh-lib').onclick = refreshLibraryList;
+    document.getElementById('sp-refresh-q').onclick = refreshQueueList;
 
-    function calculateRatio(e) {
+    // Wire Timeline Dragging
+    const zone = document.getElementById('sp-scrub-zone');
+    const rail = document.getElementById('sp-scrub-rail');
+    const fill = document.getElementById('sp-scrub-fill');
+    const curLabel = document.getElementById('sp-time-cur');
+    const durLabel = document.getElementById('sp-time-dur');
+
+    function getTouchRatio(e) {
       const rect = rail.getBoundingClientRect();
-      const x = e.clientX ?? (e.touches && e.touches[0]?.clientX) ?? 0;
-      return Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+      const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? e.changedTouches?.[0]?.clientX ?? 0;
+      return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     }
 
-    scrubBox.addEventListener('pointerdown', (e) => {
-      isDragging = true;
-      scrubBox.setPointerCapture(e.pointerId);
-      const ratio = calculateRatio(e);
+    function previewScrub(ratio) {
       fill.style.width = `${ratio * 100}%`;
+      const totalSec = parseTimeStr(durLabel.innerText);
+      if (totalSec > 0) {
+        curLabel.innerText = formatSeconds(totalSec * ratio);
+      }
+    }
+
+    zone.addEventListener('pointerdown', (e) => {
+      isUserScrubbing = true;
+      zone.setPointerCapture(e.pointerId);
+      previewScrub(getTouchRatio(e));
     });
 
-    scrubBox.addEventListener('pointermove', (e) => {
-      if (!isDragging) return;
-      const ratio = calculateRatio(e);
-      fill.style.width = `${ratio * 100}%`;
+    zone.addEventListener('pointermove', (e) => {
+      if (!isUserScrubbing) return;
+      previewScrub(getTouchRatio(e));
     });
 
-    scrubBox.addEventListener('pointerup', (e) => {
-      if (!isDragging) return;
-      const ratio = calculateRatio(e);
-      seekNativeSpotify(ratio);
-      setTimeout(() => { isDragging = false; }, 200);
+    zone.addEventListener('pointerup', (e) => {
+      if (!isUserScrubbing) return;
+      const finalRatio = getTouchRatio(e);
+      previewScrub(finalRatio);
+      seekToRatio(finalRatio);
+      setTimeout(() => { isUserScrubbing = false; }, 250);
     });
   }
 
-  const mountLoop = setInterval(() => {
-    mountShell();
-    if (document.getElementById('sp-mobile-shell')) clearInterval(mountLoop);
+  const bootLoop = setInterval(() => {
+    mountApp();
+    if (document.getElementById('sp-mobile-shell')) clearInterval(bootLoop);
   }, 200);
 })();
