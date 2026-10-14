@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.7
+// @version      9.8
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -452,130 +452,141 @@
     }
   }
 
-  // --- 6. BACKGROUND DAEMON: KEEP QUEUE & LIBRARY MOUNTED ---
-  function ensureBackgroundPanels() {
-    // Silently open Queue drawer if closed
-    var qBtn = document.querySelector('button[data-testid="control-button-queue"], button[aria-label*="Queue"]');
-    if (qBtn) {
-      var isQueueOpen = qBtn.getAttribute('aria-checked') === 'true' ||
-                        qBtn.getAttribute('aria-expanded') === 'true' ||
-                        document.querySelector('[aria-label="Next up"]') !== null;
-      if (!isQueueOpen) {
-        robustClick(qBtn);
-      }
-    }
+  // --- 6. ON-DEMAND PANEL OPENERS (ONLY RUN WHEN TAB IS VIEWED) ---
+  function ensureLibraryOpen(callback) {
+    var openLibBtn = document.querySelector('button[aria-label="Open Your Library"], button[aria-label*="Expand Your Library"]');
+    var libGrid = document.querySelector('div[role="grid"][aria-label="Your Library"]');
 
-    // Silently expand Your Library if collapsed
-    var expandLibBtn = document.querySelector('button[aria-label*="Expand Your Library"]');
-    if (expandLibBtn) {
-      robustClick(expandLibBtn);
+    // Only click if it is actually closed
+    if (openLibBtn && !libGrid) {
+      robustClick(openLibBtn);
+      setTimeout(callback, 350);
+    } else {
+      callback();
     }
   }
 
-  // Periodically ensure desktop background panels remain mounted
-  setInterval(ensureBackgroundPanels, 2500);
+  function ensureQueueOpen(callback) {
+    var qBtn = document.querySelector('button[data-testid="control-button-queue"], button[aria-label="Queue"]');
+    var hasQueueDOM = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
+
+    if (qBtn) {
+      var isClosed = qBtn.getAttribute('data-active') === 'false' ||
+                     qBtn.getAttribute('aria-pressed') === 'false' ||
+                     !hasQueueDOM;
+      // Only click if it is actually closed
+      if (isClosed) {
+        robustClick(qBtn);
+        setTimeout(callback, 350);
+        return;
+      }
+    }
+    callback();
+  }
 
   // --- 7. SCRAPERS (PLAYLISTS, TRACKS, QUEUE & SEARCH) ---
   function refreshLibraryList() {
     var container = document.getElementById('sp-library-list');
     if (!container) return;
 
-    var libGrid = document.querySelector('div[role="grid"][aria-label="Your Library"]');
-    var rows = libGrid
-      ? libGrid.querySelectorAll('[data-encore-id="listRow"]')
-      : document.querySelectorAll('nav[aria-label="Your Library"] [data-encore-id="listRow"], [aria-label="Your Library"] [data-encore-id="listRow"]');
+    ensureLibraryOpen(function () {
+      var libGrid = document.querySelector('div[role="grid"][aria-label="Your Library"]');
+      var rows = libGrid
+        ? libGrid.querySelectorAll('[data-encore-id="listRow"]')
+        : document.querySelectorAll('nav[aria-label="Your Library"] [data-encore-id="listRow"], [aria-label="Your Library"] [data-encore-id="listRow"]');
 
-    var playlistCards = [];
-    var seenTitles = {};
+      var playlistCards = [];
+      var seenTitles = {};
 
-    for (var r = 0; r < rows.length; r++) {
-      var row = rows[r];
-      if (row.querySelector('button[aria-label*="Search"], input')) continue;
+      for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        if (row.querySelector('button[aria-label*="Search"], input')) continue;
 
-      var titleEl = row.querySelector('[data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"], [id^="listrow-title-"]');
-      var title = titleEl ? titleEl.innerText.trim() : '';
+        var titleEl = row.querySelector('[data-encore-id="listRowTitle"] .e-10860-line-clamp, [data-encore-id="listRowTitle"], [id^="listrow-title-"]');
+        var title = titleEl ? titleEl.innerText.trim() : '';
 
-      var subEl = row.querySelector('[data-encore-id="listRowSubtitle"], [id^="listrow-subtitle-"]');
-      var sub = 'Playlist';
-      if (subEl) {
-        var clone = subEl.cloneNode(true);
-        var pinnedIcons = clone.querySelectorAll('svg, title');
-        for (var p = 0; p < pinnedIcons.length; p++) pinnedIcons[p].remove();
-        sub = clone.innerText.trim() || 'Playlist';
-      }
+        var subEl = row.querySelector('[data-encore-id="listRowSubtitle"], [id^="listrow-subtitle-"]');
+        var sub = 'Playlist';
+        if (subEl) {
+          var clone = subEl.cloneNode(true);
+          var pinnedIcons = clone.querySelectorAll('svg, title');
+          for (var p = 0; p < pinnedIcons.length; p++) pinnedIcons[p].remove();
+          sub = clone.innerText.trim() || 'Playlist';
+        }
 
-      if (!title) {
-        var link = row.querySelector('a[href*="/playlist/"], a[href*="/collection/tracks"], a[href*="/album/"], a[href*="/artist/"]');
-        if (link) title = link.getAttribute('aria-label') || link.innerText.trim();
-      }
+        if (!title) {
+          var link = row.querySelector('a[href*="/playlist/"], a[href*="/collection/tracks"], a[href*="/album/"], a[href*="/artist/"]');
+          if (link) title = link.getAttribute('aria-label') || link.innerText.trim();
+        }
 
-      if (!title || seenTitles[title]) continue;
-      seenTitles[title] = true;
+        if (!title || seenTitles[title]) continue;
+        seenTitles[title] = true;
 
-      var imgEl = row.querySelector('img[data-testid="entity-image"], img');
-      var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
+        var imgEl = row.querySelector('img[data-testid="entity-image"], img');
+        var imgSrc = upgradeToHDArt(imgEl ? imgEl.src : '');
 
-      var playBtn = row.querySelector('button[data-testid="play-button"], button[aria-label*="Play"]');
-      var openTarget = row.querySelector('.e-10860-legacy-list-row__row-button, [role="button"]') || row;
+        var playBtn = row.querySelector('button[data-testid="play-button"], button[aria-label*="Play"]');
+        var openTarget = row.querySelector('.e-10860-legacy-list-row__row-button, [role="button"]') || row;
 
-      playlistCards.push({
-        title: title,
-        sub: sub,
-        imgSrc: imgSrc,
-        playBtn: playBtn,
-        openTarget: openTarget,
-        row: row
-      });
-    }
-
-    if (!playlistCards.length) {
-      container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No playlists detected yet. Tap Reload in a moment.</div>';
-      return;
-    }
-
-    container.innerHTML = '';
-    for (var c = 0; c < playlistCards.length; c++) {
-      (function (data) {
-        var card = document.createElement('div');
-        card.className = 'sp-list-card';
-        card.innerHTML =
-          (data.imgSrc
-            ? '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />'
-            : '<div class="sp-list-img" style="display:flex;align-items:center;justify-content:center;background:#282828;"><svg style="width:6vw;height:6vw;fill:#b3b3b3;" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>') +
-          '<div class="sp-list-info">' +
-          '<span class="sp-list-title">' + data.title + '</span>' +
-          '<span class="sp-list-sub">' + data.sub + '</span>' +
-          '</div>' +
-          '<button class="sp-card-play-btn" title="Play">' +
-          '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
-          '</button>';
-
-        card.addEventListener('click', function (e) {
-          if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
-          robustClick(data.openTarget);
-          setTimeout(function () {
-            switchTab('tracks');
-          }, 450);
+        playlistCards.push({
+          title: title,
+          sub: sub,
+          imgSrc: imgSrc,
+          playBtn: playBtn,
+          openTarget: openTarget,
+          row: row
         });
+      }
 
-        var btn = card.querySelector('.sp-card-play-btn');
-        btn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          if (data.playBtn) {
-            robustClick(data.playBtn);
-          } else {
+      if (!playlistCards.length) {
+        container.innerHTML = '<div style="color:#a7a7a7;font-size:3.8vw;text-align:center;padding:5vh 2vw;">No playlists detected yet. Tap Reload in a moment.</div>';
+        return;
+      }
+
+      container.innerHTML = '';
+      for (var c = 0; c < playlistCards.length; c++) {
+        (function (data) {
+          var card = document.createElement('div');
+          card.className = 'sp-list-card';
+          card.innerHTML =
+            (data.imgSrc
+              ? '<img class="sp-list-img" src="' + data.imgSrc + '" alt="" />'
+              : '<div class="sp-list-img" style="display:flex;align-items:center;justify-content:center;background:#282828;"><svg style="width:6vw;height:6vw;fill:#b3b3b3;" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg></div>') +
+            '<div class="sp-list-info">' +
+            '<span class="sp-list-title">' + data.title + '</span>' +
+            '<span class="sp-list-sub">' + data.sub + '</span>' +
+            '</div>' +
+            '<button class="sp-card-play-btn" title="Play">' +
+            '<svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>' +
+            '</button>';
+
+          card.addEventListener('click', function (e) {
+            if (e.target && e.target.closest && e.target.closest('.sp-card-play-btn')) return;
             robustClick(data.openTarget);
             setTimeout(function () {
-              var mainPlay = document.querySelector('[data-testid="action-bar-row"] [data-testid="play-button"], button[data-testid="play-button"]');
-              if (mainPlay) robustClick(mainPlay);
-            }, 600);
-          }
-          switchTab('player');
-        });
+              switchTab('tracks');
+            }, 450);
+          });
 
-        container.appendChild(card);
-      })(playlistCards[c]);
-    }
+          var btn = card.querySelector('.sp-card-play-btn');
+          btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (data.playBtn) {
+              robustClick(data.playBtn);
+            } else {
+              robustClick(data.openTarget);
+              setTimeout(function () {
+                var mainPlay = document.querySelector('[data-testid="action-bar-row"] [data-testid="play-button"], button[data-testid="play-button"]');
+                if (mainPlay) robustClick(mainPlay);
+              }, 600);
+            }
+            switchTab('player');
+          });
+
+          container.appendChild(card);
+        })(playlistCards[c]);
+      }
+    });
   }
 
   function extractTrackData(row, idx) {
@@ -660,21 +671,11 @@
     var container = document.getElementById('sp-queue-list');
     if (!container) return;
 
-    ensureBackgroundPanels();
-
-    var queueList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
-    var rows = queueList ? queueList.querySelectorAll('li[role="row"]') : [];
-
-    if (!rows.length) {
-      setTimeout(function () {
-        var updatedList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
-        var updatedRows = updatedList ? updatedList.querySelectorAll('li[role="row"]') : [];
-        renderRowsToContainer(updatedRows, container, 'Queue is empty or loading. Tap Reload!');
-      }, 500);
-      return;
-    }
-
-    renderRowsToContainer(rows, container, 'Queue is empty. Add songs to queue or tap Reload!');
+    ensureQueueOpen(function () {
+      var queueList = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
+      var rows = queueList ? queueList.querySelectorAll('li[role="row"]') : [];
+      renderRowsToContainer(rows, container, 'Queue is empty or loading. Tap Reload!');
+    });
   }
 
   function setNativeInputValue(input, val) {
@@ -988,7 +989,7 @@
       '<div id="sp-view-search" class="sp-view-panel">' +
         '<div class="sp-section-header"><span>Search</span></div>' +
         '<div class="sp-search-bar">' +
-          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
+          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>' +
           '<input id="sp-search-input" class="sp-search-input" type="text" placeholder="What do you want to play?" />' +
         '</div>' +
         '<div id="sp-search-results" class="sp-item-list"></div>' +
@@ -1137,9 +1138,6 @@
         isUserScrubbing = false;
       }, 300);
     });
-
-    // Ensure desktop panels are mounted in background on initial boot
-    setTimeout(ensureBackgroundPanels, 1000);
   }
 
   var initInterval = setInterval(function () {
