@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.0
+// @version      9.1
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -71,7 +71,7 @@
     '.sp-scrubber-wrap { width: 88vw !important; display: flex !important; flex-direction: column !important; }',
     '.sp-scrub-touch-area { width: 100% !important; padding: 2.2vh 0 !important; cursor: pointer !important; touch-action: none !important; }',
     '.sp-scrub-track { width: 100% !important; height: 0.9vh !important; background: rgba(255, 255, 255, 0.22) !important; border-radius: 1vh !important; position: relative !important; }',
-    '.sp-scrub-fill { width: 0% !important; height: 100% !important; background: #ffffff !important; border-radius: 1vh !important; position: relative !important; }',
+    '.sp-scrub-fill { width: 0%; height: 100% !important; background: #ffffff !important; border-radius: 1vh !important; position: relative !important; }',
     '.sp-scrub-touch-area:active .sp-scrub-fill { background: #1db954 !important; }',
     '.sp-scrub-thumb { position: absolute !important; right: -2.2vw !important; top: 50% !important; transform: translateY(-50%) !important; width: 4.4vw !important; height: 4.4vw !important; background: #ffffff !important; border-radius: 50% !important; box-shadow: 0 0.3vh 1vh rgba(0,0,0,0.8) !important; }',
     '.sp-time-labels { display: flex !important; justify-content: space-between !important; font-size: 3.1vw !important; font-weight: 600 !important; color: #a7a7a7 !important; margin-top: -0.6vh !important; }',
@@ -219,13 +219,19 @@
   function getTotalDurationSeconds() {
     var durEl = document.querySelector('[data-testid="playback-duration"]');
     if (durEl) {
-      var val = parseTimeStr(durEl.innerText);
+      var val = parseTimeStr(durEl.innerText || durEl.textContent);
       if (val > 0) return val;
     }
     var bar = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
     if (bar && bar.max) {
       var maxVal = parseFloat(bar.max);
-      return maxVal > 1000 ? maxVal / 1000 : maxVal;
+      if (maxVal > 0) return maxVal > 1000 ? maxVal / 1000 : maxVal;
+    }
+    var mediaList = getAllMedia();
+    for (var m = 0; m < mediaList.length; m++) {
+      if (mediaList[m].duration && mediaList[m].duration > 1) {
+        return mediaList[m].duration;
+      }
     }
     return 0;
   }
@@ -678,13 +684,31 @@
       var curText = document.getElementById('sp-time-cur');
       var durText = document.getElementById('sp-time-dur');
 
+      var cSec = 0;
+      var dSec = 0;
+
       if (posEl && durEl) {
-        var cSec = parseTimeStr(posEl.innerText);
-        var dSec = parseTimeStr(durEl.innerText);
-        if (curText) curText.innerText = posEl.innerText;
-        if (durText) durText.innerText = durEl.innerText;
-        if (fillEl && dSec > 0) {
-          fillEl.style.width = Math.min(100, (cSec / dSec) * 100) + '%';
+        cSec = parseTimeStr(posEl.innerText || posEl.textContent);
+        dSec = parseTimeStr(durEl.innerText || durEl.textContent);
+      }
+
+      if (!dSec || dSec === 0) {
+        var allM = getAllMedia();
+        for (var mi = 0; mi < allM.length; mi++) {
+          if (allM[mi].duration && allM[mi].duration > 1) {
+            cSec = allM[mi].currentTime || 0;
+            dSec = allM[mi].duration || 0;
+            break;
+          }
+        }
+      }
+
+      if (dSec > 0) {
+        if (curText) curText.innerText = (posEl && posEl.innerText && posEl.innerText.trim()) ? posEl.innerText.trim() : formatSeconds(cSec);
+        if (durText) durText.innerText = (durEl && durEl.innerText && durEl.innerText.trim()) ? durEl.innerText.trim() : formatSeconds(dSec);
+        if (fillEl) {
+          var pct = Math.min(100, Math.max(0, (cSec / dSec) * 100));
+          fillEl.style.width = pct + '%';
         }
       }
     }
@@ -867,9 +891,9 @@
     }
 
     function updateScrubPreview(ratio) {
-      fill.style.width = (ratio * 100) + '%';
+      if (fill) fill.style.width = (ratio * 100) + '%';
       var totalSec = getTotalDurationSeconds();
-      if (totalSec > 0) {
+      if (totalSec > 0 && curLabel) {
         curLabel.innerText = formatSeconds(totalSec * ratio);
       }
     }
