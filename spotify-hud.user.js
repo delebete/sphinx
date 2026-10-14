@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      9.8
+// @version      9.9
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -452,34 +452,34 @@
     }
   }
 
-  // --- 6. ON-DEMAND PANEL OPENERS (ONLY RUN WHEN TAB IS VIEWED) ---
+  // --- 6. ON-DEMAND DIRECT PANEL OPENERS ---
   function ensureLibraryOpen(callback) {
+    // If "Open Your Library" button exists, it's currently closed. Click to open!
     var openLibBtn = document.querySelector('button[aria-label="Open Your Library"], button[aria-label*="Expand Your Library"]');
-    var libGrid = document.querySelector('div[role="grid"][aria-label="Your Library"]');
-
-    // Only click if it is actually closed
-    if (openLibBtn && !libGrid) {
-      robustClick(openLibBtn);
+    if (openLibBtn) {
+      openLibBtn.click();
       setTimeout(callback, 350);
-    } else {
-      callback();
+      return;
     }
+    callback();
   }
 
   function ensureQueueOpen(callback) {
+    // If queue is closed, click the button to open it!
     var qBtn = document.querySelector('button[data-testid="control-button-queue"], button[aria-label="Queue"]');
-    var hasQueueDOM = document.querySelector('ul[aria-label="Next up"], ul[role="treegrid"][aria-label*="Next"]');
-
+    var isClosed = false;
     if (qBtn) {
-      var isClosed = qBtn.getAttribute('data-active') === 'false' ||
-                     qBtn.getAttribute('aria-pressed') === 'false' ||
-                     !hasQueueDOM;
-      // Only click if it is actually closed
-      if (isClosed) {
-        robustClick(qBtn);
-        setTimeout(callback, 350);
-        return;
+      var active = qBtn.getAttribute('data-active');
+      var pressed = qBtn.getAttribute('aria-pressed');
+      var hasNextUp = document.querySelector('ul[aria-label="Next up"], [aria-label="Next up"]');
+      if (active === 'false' || pressed === 'false' || !hasNextUp) {
+        isClosed = true;
       }
+    }
+    if (qBtn && isClosed) {
+      qBtn.click();
+      setTimeout(callback, 350);
+      return;
     }
     callback();
   }
@@ -846,7 +846,7 @@
       var isLiked = getLikeState();
       btnLike.classList.toggle('is-liked', isLiked);
       likeSvg.innerHTML = isLiked
-        ? '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>'
+        ? '<path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>'
         : '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>';
     }
 
@@ -989,7 +989,7 @@
       '<div id="sp-view-search" class="sp-view-panel">' +
         '<div class="sp-section-header"><span>Search</span></div>' +
         '<div class="sp-search-bar">' +
-          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 14z"/></svg>' +
+          '<svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>' +
           '<input id="sp-search-input" class="sp-search-input" type="text" placeholder="What do you want to play?" />' +
         '</div>' +
         '<div id="sp-search-results" class="sp-item-list"></div>' +
