@@ -201,31 +201,45 @@
     return trackedMedia;
   }
 
-  function isRealSongPlaying() {
-    var adNodes = document.querySelector(
-      '[data-testid="ad-info"], [aria-label*="Advertisement"], [data-testid="context-item-info-ad-subtitle"]'
-    );
-    if (adNodes) return false;
+  var DEBUG = true;
+  function log(){ if(DEBUG) console.log('[spotify-hud]', Array.prototype.join.call(arguments,' ')); }
 
-    if (navigator.mediaSession && navigator.mediaSession.metadata) {
-      var t = String(navigator.mediaSession.metadata.title || '').toLowerCase();
-      var a = String(navigator.mediaSession.metadata.artist || '').toLowerCase();
-      if (!t || t.indexOf('advertisement') !== -1 || t === 'spotify' || a === 'spotify') return false;
+  function detectAdsInRoot(root){
+    if(!root) return null;
+    var sel=['[data-testid="ad-info"]','[aria-label*="Advertisement"]','[data-testid="context-item-info-ad-subtitle"]','[data-testid="context-item-info-subtitle"]','[aria-label*="ad"]'];
+    for(var s=0;s<sel.length;s++){
+      try{ var n=root.querySelector(sel[s]); if(n) return n; }catch(e){}
+    }
+    return null;
+  }
+
+  function isRealSongPlaying(){
+    var ad=detectAdsInRoot(document);
+    if(ad){ log('Ad via DOM'); return false; }
+
+    var iframes=document.querySelectorAll('iframe');
+    for(var f=0;f<iframes.length;f++){
+      try{
+        var doc=iframes[f].contentDocument||iframes[f].contentWindow.document;
+        if(detectAdsInRoot(doc)){ log('Ad in iframe'); return false; }
+      }catch(e){} // cross-origin, ignore
     }
 
-    var trackLink = document.querySelector(
-      '[data-testid="context-item-link"], [data-testid="nowplaying-track-link"]'
-    );
-    if (!trackLink) return false;
-    var href = String(trackLink.getAttribute('href') || '');
-    if (
-      href.indexOf('/track/') === -1 &&
-      href.indexOf('/album/') === -1 &&
-      href.indexOf('/playlist/') === -1 &&
-      href.indexOf('/episode/') === -1
-    ) {
-      return false;
+    var title=String(document.title||'').toLowerCase();
+    if(title.indexOf('advertisement')!==-1){ log('Ad via title:',title); return false; }
+
+    if(navigator.mediaSession&&navigator.mediaSession.metadata){
+      var t=String(navigator.mediaSession.metadata.title||'').toLowerCase();
+      var a=String(navigator.mediaSession.metadata.artist||'').toLowerCase();
+      if(!t||t.indexOf('advertisement')!==-1||t==='spotify'||a==='spotify'){ log('Ad via mediaSession:',t,a); return false; }
     }
+
+    var link=document.querySelector('[data-testid="context-item-link"],[data-testid="nowplaying-track-link"],a[href*="/track/"],a[href*="/album/"],a[href*="/playlist/"],a[href*="/episode/"]');
+    if(!link){ log('No track link — treating as ad'); return false; }
+    var href=String(link.getAttribute('href')||'');
+    if(href.indexOf('/track/')===-1&&href.indexOf('/album/')===-1&&href.indexOf('/playlist/')===-1&&href.indexOf('/episode/')===-1){ log('Link not content:',href); return false; }
+
+    log('Real song');
     return true;
   }
 
