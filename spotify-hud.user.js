@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      10.6
+// @version      10.7
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -250,26 +250,26 @@
     return null;
   }
 
+  // 16x is the default; a song must be positively identified before we drop to 1x.
   function isRealSongPlaying(){
-    // Primary signal: Spotify's own ad flag on the now-playing bar.
+    // Ad signals win outright: Spotify's own bar flag, then any ad markup in the page.
     if (isAdPlaying()) return false;
-
-    // Secondary: explicit ad markup anywhere in the page.
     if (detectAdsInRoot(document)) return false;
 
-    // Secondary: media session title.
-    if (navigator.mediaSession && navigator.mediaSession.metadata) {
-      var t = String(navigator.mediaSession.metadata.title || '').toLowerCase();
-      if (!t || t.indexOf('advertisement') !== -1) return false;
+    // Positive song signal: Spotify's "now playing" metadata with a real (non-ad) title.
+    var meta = (navigator.mediaSession && navigator.mediaSession.metadata) ? navigator.mediaSession.metadata : null;
+    var metaTitle = String((meta && meta.title) || '').toLowerCase();
+    if (metaTitle && metaTitle.indexOf('advertisement') === -1) return true;
+
+    // Fallback positive signal: the bar reports "not an ad" and renders a track title.
+    var bar = getNowPlayingBar();
+    if (bar && bar.getAttribute('data-testadtype') === 'ad-type-none') {
+      var titleNode = document.querySelector('[data-testid="context-item-link"]');
+      if (titleNode && String(titleNode.textContent || '').trim()) return true;
     }
 
-    // Secondary: the bar shows the word "Advertisement".
-    var bar = getNowPlayingBar();
-    if (bar && String(bar.textContent || '').toLowerCase().indexOf('advertisement') !== -1) return false;
-
-    // Default to real song: when no ad signal is found, never speed-up/mute (a missed ad is
-    // harmless, a false positive fast-forwards the user's music).
-    return true;
+    // Unknown stays at 16x.
+    return false;
   }
 
   function upgradeToHDArt(url) {
@@ -861,7 +861,7 @@
     var isSong = isRealSongPlaying();
     if (isSong !== lastIsSong) {
       lastIsSong = isSong;
-      log(isSong ? 'State -> 1x (song)' : 'State -> 16x (ad)');
+      log(isSong ? 'State -> 1x (song)' : 'State -> 16x (skip)');
     }
     var targetRate = isSong ? 1.0 : 16.0;
 
