@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      10.4
+// @version      10.5
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -171,8 +171,8 @@
       var el = origCreate.apply(document, arguments);
       if (tag && (String(tag).toLowerCase() === 'audio' || String(tag).toLowerCase() === 'video')) {
         try {
-          el.playbackRate = 16.0;
-          el.defaultPlaybackRate = 16.0;
+          el.playbackRate = 1.0;
+          el.defaultPlaybackRate = 1.0;
         } catch (err) {}
         addMediaToList(el);
       }
@@ -198,15 +198,34 @@
     for (var i = 0; i < domMedia.length; i++) {
       addMediaToList(domMedia[i]);
     }
+    var frames = document.querySelectorAll('iframe');
+    for (var f = 0; f < frames.length; f++) {
+      try {
+        var fdoc = frames[f].contentDocument;
+        if (!fdoc) continue;
+        var fmedia = fdoc.querySelectorAll('audio, video');
+        for (var j = 0; j < fmedia.length; j++) addMediaToList(fmedia[j]);
+      } catch (e) {} // cross-origin, ignore
+    }
     return trackedMedia;
   }
 
   var DEBUG = true;
   function log(){ if(DEBUG) console.log('[spotify-hud]', Array.prototype.join.call(arguments,' ')); }
 
+  function getNowPlayingBar(){
+    return document.querySelector('[data-testid="now-playing-bar"]');
+  }
+
+  // Spotify's own flag on the now-playing bar: ad-type-ad during an ad, ad-type-none otherwise.
+  function isAdPlaying(){
+    var bar = getNowPlayingBar();
+    return !!bar && bar.getAttribute('data-testadtype') === 'ad-type-ad';
+  }
+
   function detectAdsInRoot(root){
     if(!root) return null;
-    var sel=['[data-testid="ad-info"]','[aria-label*="Advertisement"]','[data-testid="context-item-info-ad-subtitle"]','[data-testid="context-item-info-subtitle"]','[aria-label*="ad"]'];
+    var sel=['[data-testid="ad-info"]','[aria-label*="Advertisement"]','[data-testid="context-item-info-ad-subtitle"]'];
     for(var s=0;s<sel.length;s++){
       try{ var n=root.querySelector(sel[s]); if(n) return n; }catch(e){}
     }
@@ -214,32 +233,26 @@
   }
 
   function isRealSongPlaying(){
-    var ad=detectAdsInRoot(document);
-    if(ad){ log('Ad via DOM'); return false; }
+    // Primary signal: Spotify's own ad flag on the now-playing bar.
+    if (isAdPlaying()) { log('Ad: bar data-testadtype=ad-type-ad'); return false; }
 
-    var iframes=document.querySelectorAll('iframe');
-    for(var f=0;f<iframes.length;f++){
-      try{
-        var doc=iframes[f].contentDocument||iframes[f].contentWindow.document;
-        if(detectAdsInRoot(doc)){ log('Ad in iframe'); return false; }
-      }catch(e){} // cross-origin, ignore
+    // Secondary: explicit ad markup anywhere in the page.
+    if (detectAdsInRoot(document)) { log('Ad: DOM marker'); return false; }
+
+    // Secondary: media session title.
+    if (navigator.mediaSession && navigator.mediaSession.metadata) {
+      var t = String(navigator.mediaSession.metadata.title || '').toLowerCase();
+      if (!t || t.indexOf('advertisement') !== -1) { log('Ad: mediaSession', t); return false; }
     }
 
-    var title=String(document.title||'').toLowerCase();
-    if(title.indexOf('advertisement')!==-1){ log('Ad via title:',title); return false; }
-
-    if(navigator.mediaSession&&navigator.mediaSession.metadata){
-      var t=String(navigator.mediaSession.metadata.title||'').toLowerCase();
-      var a=String(navigator.mediaSession.metadata.artist||'').toLowerCase();
-      if(!t||t.indexOf('advertisement')!==-1||t==='spotify'||a==='spotify'){ log('Ad via mediaSession:',t,a); return false; }
+    // Secondary: the bar shows the word "Advertisement".
+    var bar = getNowPlayingBar();
+    if (bar && String(bar.innerText || '').toLowerCase().indexOf('advertisement') !== -1) {
+      log('Ad: bar text'); return false;
     }
 
-    var link=document.querySelector('[data-testid="context-item-link"],[data-testid="nowplaying-track-link"],a[href*="/track/"],a[href*="/album/"],a[href*="/playlist/"],a[href*="/episode/"]');
-    if(!link){ log('No track link — treating as ad'); return false; }
-    var href=String(link.getAttribute('href')||'');
-    if(href.indexOf('/track/')===-1&&href.indexOf('/album/')===-1&&href.indexOf('/playlist/')===-1&&href.indexOf('/episode/')===-1){ log('Link not content:',href); return false; }
-
-    log('Real song');
+    // Default to real song: when no ad signal is found, never speed-up/mute (a missed ad is
+    // harmless, a false positive fast-forwards the user's music).
     return true;
   }
 
