@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      10.5
+// @version      10.6
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -162,6 +162,16 @@
   function addMediaToList(el) {
     if (el && trackedMedia.indexOf(el) === -1) {
       trackedMedia.push(el);
+      // Re-assert speed/mute on media events: background timers get throttled with the
+      // screen off, but media events still fire, so ad-skip/1x stays correct.
+      try {
+        var resync = function () { syncState(); };
+        el.addEventListener('play', resync);
+        el.addEventListener('playing', resync);
+        el.addEventListener('loadedmetadata', resync);
+        el.addEventListener('ended', resync);
+        el.addEventListener('ratechange', resync);
+      } catch (e) {}
     }
   }
 
@@ -185,19 +195,19 @@
     if (navigator.mediaSession && navigator.mediaSession.setActionHandler) {
       var origSetHandler = navigator.mediaSession.setActionHandler.bind(navigator.mediaSession);
       navigator.mediaSession.setActionHandler = function (action, handler) {
-        if (action === 'seekto' && typeof handler === 'function') {
-          spotifySeekHandler = handler;
+        if (action === 'seekto') {
+          spotifySeekHandler = (typeof handler === 'function') ? handler : null;
         }
         return origSetHandler(action, handler);
       };
     }
   } catch (err) {}
 
-  function getAllMedia() {
-    var domMedia = document.querySelectorAll('audio, video');
-    for (var i = 0; i < domMedia.length; i++) {
-      addMediaToList(domMedia[i]);
-    }
+  var frameScanAt = 0;
+  function getFrameMedia() {
+    var now = Date.now();
+    if (now - frameScanAt < 2000) return;
+    frameScanAt = now;
     var frames = document.querySelectorAll('iframe');
     for (var f = 0; f < frames.length; f++) {
       try {
@@ -207,6 +217,14 @@
         for (var j = 0; j < fmedia.length; j++) addMediaToList(fmedia[j]);
       } catch (e) {} // cross-origin, ignore
     }
+  }
+
+  function getAllMedia() {
+    var domMedia = document.querySelectorAll('audio, video');
+    for (var i = 0; i < domMedia.length; i++) {
+      addMediaToList(domMedia[i]);
+    }
+    getFrameMedia();
     return trackedMedia;
   }
 
@@ -234,22 +252,20 @@
 
   function isRealSongPlaying(){
     // Primary signal: Spotify's own ad flag on the now-playing bar.
-    if (isAdPlaying()) { log('Ad: bar data-testadtype=ad-type-ad'); return false; }
+    if (isAdPlaying()) return false;
 
     // Secondary: explicit ad markup anywhere in the page.
-    if (detectAdsInRoot(document)) { log('Ad: DOM marker'); return false; }
+    if (detectAdsInRoot(document)) return false;
 
     // Secondary: media session title.
     if (navigator.mediaSession && navigator.mediaSession.metadata) {
       var t = String(navigator.mediaSession.metadata.title || '').toLowerCase();
-      if (!t || t.indexOf('advertisement') !== -1) { log('Ad: mediaSession', t); return false; }
+      if (!t || t.indexOf('advertisement') !== -1) return false;
     }
 
     // Secondary: the bar shows the word "Advertisement".
     var bar = getNowPlayingBar();
-    if (bar && String(bar.innerText || '').toLowerCase().indexOf('advertisement') !== -1) {
-      log('Ad: bar text'); return false;
-    }
+    if (bar && String(bar.textContent || '').toLowerCase().indexOf('advertisement') !== -1) return false;
 
     // Default to real song: when no ad signal is found, never speed-up/mute (a missed ad is
     // harmless, a false positive fast-forwards the user's music).
@@ -791,8 +807,62 @@
   }
 
   // --- 8. CONTINUOUS SYNC LOOP ---
+  // Every DOM write below forces style/layout work, so the loop caches element refs and
+  // only touches the page when a value actually changed.
+  var ui = {};
+  var uiReady = false;
+  var written = {};
+  var lastIsSong = null;
+  var probeTick = 0;
+
+  function ensureUi() {
+    if (uiReady || !document.getElementById('sp-mobile-shell')) return;
+    ui = {
+      badge: document.getElementById('sp-badge'),
+      badgeText: document.getElementById('sp-badge-text'),
+      title: document.getElementById('sp-title'),
+      artist: document.getElementById('sp-artist'),
+      art: document.getElementById('sp-art'),
+      playSvg: document.getElementById('sp-play-svg'),
+      shuf: document.getElementById('sp-btn-shuf'),
+      shufBadge: document.getElementById('sp-shuf-badge'),
+      rep: document.getElementById('sp-btn-rep'),
+      like: document.getElementById('sp-btn-like'),
+      likeSvg: document.getElementById('sp-like-svg'),
+      fill: document.getElementById('sp-scrub-fill'),
+      cur: document.getElementById('sp-time-cur'),
+      dur: document.getElementById('sp-time-dur')
+    };
+    uiReady = true;
+  }
+
+  function putText(el, key, val) {
+    if (!el || written[key] === val) return;
+    written[key] = val;
+    if (el.innerText !== val) el.innerText = val;
+  }
+  function putHtml(el, key, val) {
+    if (!el || written[key] === val) return;
+    written[key] = val;
+    el.innerHTML = val;
+  }
+  function putWidth(el, key, val) {
+    if (!el || written[key] === val) return;
+    written[key] = val;
+    el.style.width = val;
+  }
+  function setClass(el, cls, on) {
+    if (el && el.classList.contains(cls) !== on) el.classList.toggle(cls, on);
+  }
+
   function syncState() {
+    ensureUi();
+
     var isSong = isRealSongPlaying();
+    if (isSong !== lastIsSong) {
+      lastIsSong = isSong;
+      log(isSong ? 'State -> 1x (song)' : 'State -> 16x (ad)');
+    }
     var targetRate = isSong ? 1.0 : 16.0;
 
     var mediaList = getAllMedia();
@@ -804,53 +874,52 @@
           media.defaultPlaybackRate = targetRate;
         } catch (e) {}
       }
-      if (!isSong && !media.muted) {
-        media.muted = true;
-      } else if (isSong && media.muted) {
-        media.muted = false;
-      }
+      if (!isSong && !media.muted) media.muted = true;
+      else if (isSong && media.muted) media.muted = false;
     }
 
-    var badge = document.getElementById('sp-badge');
-    var badgeText = document.getElementById('sp-badge-text');
-    if (badge && badgeText) {
-      badgeText.innerText = isSong ? '1x Song' : '16x Ad Skip';
-      badge.className = isSong ? 'sp-speed-pill mode-1x' : 'sp-speed-pill mode-16x';
+    // While the screen is off / page hidden, skip all HUD work: it costs CPU and churns the
+    // DOM for nothing the user can see. Rate + mute above are already applied.
+    if (document.hidden) {
+      probeTick++;
+      return;
     }
 
-    var titleEl = document.getElementById('sp-title');
-    var artistEl = document.getElementById('sp-artist');
-    var artEl = document.getElementById('sp-art');
+    if (ui.badge && ui.badgeText) {
+      putText(ui.badgeText, 'badge', isSong ? '1x Song' : '16x Ad Skip');
+      setClass(ui.badge, 'mode-1x', isSong);
+      setClass(ui.badge, 'mode-16x', !isSong);
+    }
 
     var domTitleNode = document.querySelector('[data-testid="context-item-link"]');
     var domArtistNode = document.querySelector('[data-testid="context-item-info-subtitles"]');
     var domArtNode = document.querySelector('[data-testid="cover-art-image"]');
 
-    var domTitle = domTitleNode ? domTitleNode.innerText : '';
-    var domArtist = domArtistNode ? domArtistNode.innerText : '';
-    var metaArt = (navigator.mediaSession && navigator.mediaSession.metadata && navigator.mediaSession.metadata.artwork && navigator.mediaSession.metadata.artwork[0])
-      ? navigator.mediaSession.metadata.artwork[0].src
-      : '';
+    var domTitle = domTitleNode ? domTitleNode.textContent : '';
+    var domArtist = domArtistNode ? domArtistNode.textContent : '';
+    var meta = (navigator.mediaSession && navigator.mediaSession.metadata) ? navigator.mediaSession.metadata : null;
+    var metaArt = (meta && meta.artwork && meta.artwork[0]) ? meta.artwork[0].src : '';
     var hdArtUrl = upgradeToHDArt((domArtNode ? domArtNode.src : '') || metaArt);
 
-    if (titleEl) {
-      titleEl.innerText = domTitle || (navigator.mediaSession && navigator.mediaSession.metadata ? navigator.mediaSession.metadata.title : '') || 'Ready to Play';
-    }
-    if (artistEl) {
-      artistEl.innerText = domArtist || (navigator.mediaSession && navigator.mediaSession.metadata ? navigator.mediaSession.metadata.artist : '') || 'Spotify';
-    }
-    if (artEl && hdArtUrl && artEl.src !== hdArtUrl) {
-      artEl.src = hdArtUrl;
+    putText(ui.title, 'title', domTitle || (meta ? meta.title : '') || 'Ready to Play');
+    putText(ui.artist, 'artist', domArtist || (meta ? meta.artist : '') || 'Spotify');
+    if (ui.art && hdArtUrl && written['art'] !== hdArtUrl) {
+      written['art'] = hdArtUrl;
+      if (ui.art.src !== hdArtUrl) ui.art.src = hdArtUrl;
     }
 
-    if (navigator.mediaSession && navigator.mediaSession.metadata && hdArtUrl) {
-      var curArt = (navigator.mediaSession.metadata.artwork && navigator.mediaSession.metadata.artwork[0]) ? navigator.mediaSession.metadata.artwork[0].src : '';
-      if (String(curArt).indexOf('0000b273') === -1) {
+    if (meta && hdArtUrl) {
+      var curArt = (meta.artwork && meta.artwork[0]) ? meta.artwork[0].src : '';
+      // Reassign only once per track: rewriting the OS media session metadata every tick
+      // churns the session and can clobber the lock-screen controls Spotify relies on.
+      var metaKey = (domTitle || meta.title) + '|' + (domArtist || meta.artist) + '|' + hdArtUrl;
+      if (String(curArt).indexOf('0000b273') === -1 && written['metaKey'] !== metaKey) {
+        written['metaKey'] = metaKey;
         try {
           navigator.mediaSession.metadata = new MediaMetadata({
-            title: domTitle || navigator.mediaSession.metadata.title,
-            artist: domArtist || navigator.mediaSession.metadata.artist,
-            album: navigator.mediaSession.metadata.album || '',
+            title: domTitle || meta.title,
+            artist: domArtist || meta.artist,
+            album: meta.album || '',
             artwork: [{ src: hdArtUrl, sizes: '640x640', type: 'image/jpeg' }]
           });
         } catch (e) {}
@@ -858,58 +927,52 @@
     }
 
     var nativePlay = document.querySelector('[data-testid="control-button-playpause"]');
-    var playSvg = document.getElementById('sp-play-svg');
-    if (nativePlay && playSvg) {
-      var playLabel = String(nativePlay.getAttribute('aria-label') || '').toLowerCase();
-      var isPlaying = playLabel.indexOf('pause') !== -1;
-      playSvg.innerHTML = isPlaying
+    if (ui.playSvg && nativePlay) {
+      var isPlaying = String(nativePlay.getAttribute('aria-label') || '').toLowerCase().indexOf('pause') !== -1;
+      putHtml(ui.playSvg, 'play', isPlaying
         ? '<path d="M5.7 3a.7.7 0 0 0-.7.7v16.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V3.7a.7.7 0 0 0-.7-.7H5.7zm10 0a.7.7 0 0 0-.7.7v16.6a.7.7 0 0 0 .7.7h2.6a.7.7 0 0 0 .7-.7V3.7a.7.7 0 0 0-.7-.7h-2.6z"></path>'
-        : '<path d="M7.05 3.606l13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"></path></svg>';
+        : '<path d="M7.05 3.606l13.49 7.788a.7.7 0 0 1 0 1.212L7.05 20.394A.7.7 0 0 1 6 19.788V4.212a.7.7 0 0 1 1.05-.606"></path></svg>');
     }
 
     // Shuffle Sync
-    var btnShuf = document.getElementById('sp-btn-shuf');
-    var shufBadge = document.getElementById('sp-shuf-badge');
-    if (btnShuf) {
+    if (ui.shuf) {
       var shufState = getShuffleState();
-      btnShuf.classList.toggle('state-active', shufState.active);
-      btnShuf.classList.toggle('show-badge', shufState.smart);
-      if (shufBadge) shufBadge.innerText = '✦';
+      setClass(ui.shuf, 'state-active', shufState.active);
+      setClass(ui.shuf, 'show-badge', shufState.smart);
+      putText(ui.shufBadge, 'shufBadge', '\u2726');
     }
 
     // Repeat Sync
     var nativeRep = document.querySelector('[data-testid="control-button-repeat"]');
-    var btnRep = document.getElementById('sp-btn-rep');
-    if (nativeRep && btnRep) {
+    if (nativeRep && ui.rep) {
       var repChecked = nativeRep.getAttribute('aria-checked');
       var repLabel = String(nativeRep.getAttribute('aria-label') || '').toLowerCase();
-      var repColor = window.getComputedStyle(nativeRep).color;
-
       var isRepeatOne = repChecked === 'mixed' || repLabel.indexOf('disable repeat') !== -1;
-      var isRepeatAll = !isRepeatOne && (repChecked === 'true' || repLabel.indexOf('repeat one') !== -1 || repColor.indexOf('29, 185, 84') !== -1 || repColor.indexOf('30, 215, 96') !== -1);
-
-      btnRep.classList.toggle('state-active', isRepeatAll || isRepeatOne);
-      btnRep.classList.toggle('show-badge', isRepeatOne);
+      var isRepeatAll = !isRepeatOne && (repChecked === 'true' || repLabel.indexOf('repeat one') !== -1);
+      // Colour is a last-resort hint; getComputedStyle forces a style recalc, so probe it at
+      // most ~1x/sec and only while the attributes are undecided.
+      if (!isRepeatOne && !isRepeatAll && (probeTick % 6) === 0) {
+        try {
+          var repColor = window.getComputedStyle(nativeRep).color;
+          if (repColor.indexOf('29, 185, 84') !== -1 || repColor.indexOf('30, 215, 96') !== -1) isRepeatAll = true;
+        } catch (e) {}
+      }
+      setClass(ui.rep, 'state-active', isRepeatAll || isRepeatOne);
+      setClass(ui.rep, 'show-badge', isRepeatOne);
     }
 
     // Like Sync (Exact matching outline vs solid heart)
-    var btnLike = document.getElementById('sp-btn-like');
-    var likeSvg = document.getElementById('sp-like-svg');
-    if (btnLike && likeSvg) {
+    if (ui.like && ui.likeSvg) {
       var isLiked = getLikeState();
-      btnLike.classList.toggle('is-liked', isLiked);
-      likeSvg.innerHTML = isLiked
+      setClass(ui.like, 'is-liked', isLiked);
+      putHtml(ui.likeSvg, 'like', isLiked
         ? '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3z"/>'
-        : '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>';
+        : '<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>');
     }
 
     // Timeline Sync
     if (!isUserScrubbing) {
       var rangeInput = document.querySelector('[data-testid="playback-progressbar"] input[type="range"]');
-      var fillEl = document.getElementById('sp-scrub-fill');
-      var curText = document.getElementById('sp-time-cur');
-      var durText = document.getElementById('sp-time-dur');
-
       var cStr = '';
       var dStr = '';
       var pct = 0;
@@ -938,12 +1001,11 @@
       }
 
       if (!dStr || dStr === '0:00' || (!cStr && !dStr)) {
-        var allM = getAllMedia();
-        for (var mi = 0; mi < allM.length; mi++) {
-          if (allM[mi].duration && allM[mi].duration > 1) {
-            cStr = formatSeconds(allM[mi].currentTime || 0);
-            dStr = formatSeconds(allM[mi].duration || 0);
-            pct = Math.min(100, Math.max(0, ((allM[mi].currentTime || 0) / allM[mi].duration) * 100));
+        for (var mi = 0; mi < mediaList.length; mi++) {
+          if (mediaList[mi].duration && mediaList[mi].duration > 1) {
+            cStr = formatSeconds(mediaList[mi].currentTime || 0);
+            dStr = formatSeconds(mediaList[mi].duration || 0);
+            pct = Math.min(100, Math.max(0, ((mediaList[mi].currentTime || 0) / mediaList[mi].duration) * 100));
             break;
           }
         }
@@ -955,13 +1017,17 @@
         if (dSec > 0) pct = Math.min(100, Math.max(0, (cSec / dSec) * 100));
       }
 
-      if (cStr && curText) curText.innerText = cStr;
-      if (dStr && durText) durText.innerText = dStr;
-      if (fillEl) fillEl.style.width = pct + '%';
+      putText(ui.cur, 'cur', cStr || '');
+      putText(ui.dur, 'dur', dStr || '');
+      // Round so the fill only repaints when it visibly moves, not on every tick.
+      putWidth(ui.fill, 'fill', pct.toFixed(1) + '%');
     }
+    probeTick++;
   }
 
   setInterval(syncState, 150);
+  document.addEventListener('visibilitychange', function () { syncState(); });
+  window.addEventListener('pageshow', function () { syncState(); });
 
   // --- 9. MOUNT APPLICATION UI ---
   function mountShell() {
