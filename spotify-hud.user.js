@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Spotify 16x Auto-Skipper & Native Mobile OS
 // @namespace    http://tampermonkey.net/
-// @version      10.7
+// @version      10.8
 // @match        https://open.spotify.com/*
 // @run-at       document-idle
 // ==/UserScript==
@@ -157,6 +157,30 @@
       if (typeof el.click === 'function') el.click();
     } catch (e) {}
   }
+
+  // Spotify's web player gates background auto-advance on "is this tab active?", which is why a
+  // song ends and the next one never starts once the screen is off. Report ourselves as visible
+  // forever; our own idle check below uses reallyHidden so we stay cheap in the background.
+  var realHiddenDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'hidden');
+  var realStateDesc = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+  var reallyHidden;
+  function readReallyHidden() {
+    try {
+      if (realHiddenDesc && realHiddenDesc.get) return !!realHiddenDesc.get.call(document);
+      if (realStateDesc && realStateDesc.get) return realStateDesc.get.call(document) === 'hidden';
+    } catch (e) {}
+    return !!(document.hidden || document.visibilityState === 'hidden');
+  }
+  reallyHidden = readReallyHidden();
+  try {
+    Object.defineProperty(document, 'hidden', { get: function () { return false; }, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: function () { return 'visible'; }, configurable: true });
+    document.hasFocus = function () { return true; };
+  } catch (e) {}
+  document.addEventListener('visibilitychange', function () {
+    reallyHidden = readReallyHidden();
+    syncState();
+  });
 
   var trackedMedia = [];
   function addMediaToList(el) {
@@ -814,6 +838,8 @@
   var written = {};
   var lastIsSong = null;
   var probeTick = 0;
+  var SONG_HOLD_MS = 2000;
+  var lastSongAt = 0;
 
   function ensureUi() {
     if (uiReady || !document.getElementById('sp-mobile-shell')) return;
@@ -858,7 +884,13 @@
   function syncState() {
     ensureUi();
 
+    // Positive ad signal, checked first so a confirmed ad is never held at 1x by the hold below.
+    var adConfirmed = isAdPlaying() || !!detectAdsInRoot(document);
     var isSong = isRealSongPlaying();
+    if (isSong) lastSongAt = Date.now();
+    // Hold 1x across a track change: every song signal goes blank between tracks, and without this
+    // the outgoing song gets muted + 16x'd right as the track ends (audible as "it cut out").
+    if (!isSong && !adConfirmed && Date.now() - lastSongAt < SONG_HOLD_MS) isSong = true;
     if (isSong !== lastIsSong) {
       lastIsSong = isSong;
       log(isSong ? 'State -> 1x (song)' : 'State -> 16x (skip)');
@@ -870,8 +902,9 @@
       var media = mediaList[i];
       if (media.playbackRate !== targetRate) {
         try {
+          // playbackRate only. defaultPlaybackRate is what a freshly loaded source resets to, so
+          // writing 16 there makes the next track start at 16x before we can detect it as a song.
           media.playbackRate = targetRate;
-          media.defaultPlaybackRate = targetRate;
         } catch (e) {}
       }
       if (!isSong && !media.muted) media.muted = true;
@@ -880,7 +913,7 @@
 
     // While the screen is off / page hidden, skip all HUD work: it costs CPU and churns the
     // DOM for nothing the user can see. Rate + mute above are already applied.
-    if (document.hidden) {
+    if (reallyHidden) {
       probeTick++;
       return;
     }
@@ -1026,7 +1059,6 @@
   }
 
   setInterval(syncState, 150);
-  document.addEventListener('visibilitychange', function () { syncState(); });
   window.addEventListener('pageshow', function () { syncState(); });
 
   // --- 9. MOUNT APPLICATION UI ---
